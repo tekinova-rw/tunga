@@ -10,6 +10,7 @@ import {
   Alert,
   TextInput,
   Modal,
+  RefreshControl,
 } from 'react-native';
 import { useLocalSearchParams, useFocusEffect, router } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
@@ -30,13 +31,14 @@ type Animal = {
   updated_at: string;
 };
 
-const HEALTH_STATUSES = ['Healthy', 'Sick', 'Recovering', 'Under Treatment', 'Pregnant'];
-const CATEGORIES = ['Cow', 'Goat', 'Sheep', 'Pig', 'Chicken', 'Rabbit', 'Other'];
+const HEALTH_STATUSES = ['Healthy', 'Sick', 'Recovering', 'Under Treatment', 'Pregnant', 'Critical'];
+const CATEGORIES = ['Cow', 'Goat', 'Sheep', 'Pig', 'Chicken', 'Rabbit', 'Horse', 'Other'];
 
 export default function AnimalDetailsScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
   const [animal, setAnimal] = useState<Animal | null>(null);
   const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
   const [editing, setEditing] = useState(false);
   const [updating, setUpdating] = useState(false);
   const [showHealthModal, setShowHealthModal] = useState(false);
@@ -60,7 +62,8 @@ export default function AnimalDetailsScreen() {
       }
 
       console.log('Fetching animal details for id:', id);
-      const response = await api.get(`/farmer/animals/${id}`);
+      // ✅ FIX: Use /animals instead of /farmer/animals
+      const response = await api.get(`/animals/${id}`);
       
       const animalData = response.data.data || response.data;
       setAnimal(animalData);
@@ -111,6 +114,7 @@ export default function AnimalDetailsScreen() {
       }
     } finally {
       setLoading(false);
+      setRefreshing(false);
     }
   };
 
@@ -119,6 +123,11 @@ export default function AnimalDetailsScreen() {
       fetchAnimal();
     }, [token, id])
   );
+
+  const onRefresh = () => {
+    setRefreshing(true);
+    fetchAnimal();
+  };
 
   const handleUpdateAnimal = async () => {
     if (!editForm.name.trim()) {
@@ -139,7 +148,8 @@ export default function AnimalDetailsScreen() {
         notes: editForm.notes.trim() || null,
       };
       
-      const response = await api.put(`/farmer/animals/${id}`, payload);
+      // ✅ FIX: Use /animals instead of /farmer/animals
+      const response = await api.put(`/animals/${id}`, payload);
       
       Alert.alert('Success', 'Animal updated successfully');
       setEditing(false);
@@ -157,7 +167,8 @@ export default function AnimalDetailsScreen() {
     setUpdating(true);
     
     try {
-      const response = await api.patch(`/farmer/animals/${id}/health`, {
+      // ✅ FIX: Use /animals instead of /farmer/animals
+      const response = await api.patch(`/animals/${id}/health`, {
         health_status: newHealthStatus.toLowerCase(),
       });
       
@@ -184,7 +195,8 @@ export default function AnimalDetailsScreen() {
           style: 'destructive',
           onPress: async () => {
             try {
-              await api.delete(`/farmer/animals/${id}`);
+              // ✅ FIX: Use /animals instead of /farmer/animals
+              await api.delete(`/animals/${id}`);
               Alert.alert('Success', 'Animal deleted successfully');
               router.back();
             } catch (error: any) {
@@ -204,6 +216,7 @@ export default function AnimalDetailsScreen() {
       case 'recovering': return '#FF9800';
       case 'under treatment': return '#2196F3';
       case 'pregnant': return '#9C27B0';
+      case 'critical': return '#D32F2F';
       default: return '#999';
     }
   };
@@ -239,12 +252,24 @@ export default function AnimalDetailsScreen() {
   }
 
   return (
-    <ScrollView style={styles.container} showsVerticalScrollIndicator={false}>
+    <ScrollView 
+      style={styles.container} 
+      showsVerticalScrollIndicator={false}
+      refreshControl={
+        <RefreshControl
+          refreshing={refreshing}
+          onRefresh={onRefresh}
+          colors={['#2E7D32']}
+          tintColor="#2E7D32"
+        />
+      }
+    >
       {/* Header with Actions */}
       <View style={styles.header}>
         <TouchableOpacity onPress={() => router.back()} style={styles.backIcon}>
           <Ionicons name="arrow-back" size={24} color="#333" />
         </TouchableOpacity>
+        <Text style={styles.headerTitle}>Animal Details</Text>
         <View style={styles.headerActions}>
           {!editing && (
             <>
@@ -267,7 +292,8 @@ export default function AnimalDetailsScreen() {
              animal.category === 'Goat' ? '🐐' : 
              animal.category === 'Sheep' ? '🐑' : 
              animal.category === 'Pig' ? '🐷' : 
-             animal.category === 'Chicken' ? '🐔' : '🐾'}
+             animal.category === 'Chicken' ? '🐔' : 
+             animal.category === 'Horse' ? '🐴' : '🐾'}
           </Text>
         </View>
       </View>
@@ -577,6 +603,11 @@ const styles = StyleSheet.create({
     backgroundColor: '#fff',
     borderBottomWidth: 1,
     borderBottomColor: '#f0f0f0',
+  },
+  headerTitle: {
+    fontSize: 18,
+    fontWeight: '600',
+    color: '#333',
   },
   backIcon: {
     padding: 4,

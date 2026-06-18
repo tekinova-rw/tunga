@@ -24,7 +24,7 @@ type User = {
   phone: string;
   email: string;
   role: string;
-  status: 'active' | 'pending' | 'suspended' | 'deactivated';
+  status: 'active' | 'pending' | 'suspended' | 'deactivated' | 'approved' | 'rejected';
   is_verified: boolean;
   district_id?: number;
   district_name?: string;
@@ -54,32 +54,105 @@ export default function AdminDashboard() {
   const [refreshing, setRefreshing] = useState(false);
   const [selectedUser, setSelectedUser] = useState<User | null>(null);
   const [modalVisible, setModalVisible] = useState(false);
+  const [createAdminModal, setCreateAdminModal] = useState(false);
   const [editForm, setEditForm] = useState({
     full_name: '',
     phone: '',
     email: '',
     role: '',
   });
-  const { user: currentUser } = useAuthStore();
+  const [newAdmin, setNewAdmin] = useState({
+    full_name: '',
+    phone: '',
+    email: '',
+    password: '',
+    role: 'district_admin',
+    district_id: 1,
+  });
+  const { user: currentUser, token, logout } = useAuthStore();
+
+  const isSuperAdmin = currentUser?.role === 'super_admin';
+  const isDistrictAdmin = currentUser?.role === 'district_admin';
+
+  const handleLogout = () => {
+    Alert.alert(
+      'Logout',
+      'Are you sure you want to logout?',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Logout',
+          style: 'destructive',
+          onPress: async () => {
+            try {
+              await logout();
+              router.replace('/(auth)/login');
+            } catch (error) {
+              console.log('Logout error:', error);
+              router.replace('/(auth)/login');
+            }
+          },
+        },
+      ]
+    );
+  };
 
   const loadStats = async () => {
     try {
       const response = await api.get('/admin/stats');
-      setStats(response.data);
+      const data = response.data.data || response.data;
+      setStats({
+        total_users: data.totalUsers || 0,
+        total_farmers: data.totalFarmers || 0,
+        total_veterinarians: data.totalVets || 0,
+        pending_approvals: data.pendingUsers || 0,
+        active_users: data.activeUsers || 0,
+        suspended_users: data.suspendedUsers || 0,
+      });
     } catch (err) {
       console.log('Error loading stats:', err);
+      if (users.length > 0) {
+        setStats({
+          total_users: users.length,
+          total_farmers: users.filter(u => u.role === 'farmer').length,
+          total_veterinarians: users.filter(u => u.role === 'veterinarian').length,
+          pending_approvals: users.filter(u => u.status === 'pending' || u.status === 'approved').length,
+          active_users: users.filter(u => u.status === 'active').length,
+          suspended_users: users.filter(u => u.status === 'suspended').length,
+        });
+      }
     }
   };
 
   const loadUsers = async () => {
     try {
       setLoading(true);
+      console.log('📥 Loading users from API...');
+      
       const response = await api.get('/admin/users');
-      setUsers(response.data);
+      console.log('📥 API Response:', response.data);
+      
+      const data = response.data.data || response.data;
+      console.log('📥 Users data:', data);
+      
+      if (data && Array.isArray(data) && data.length > 0) {
+        console.log('✅ Setting users:', data.length);
+        setUsers(data);
+      } else {
+        console.log('⚠️ No users found in API response');
+        setUsers([]);
+      }
+      
       await loadStats();
     } catch (err: any) {
-      console.log('Error loading users:', err?.response?.data || err);
-      Alert.alert('Error', 'Failed to load users');
+      console.log('❌ Error loading users:', err?.response?.data || err);
+      
+      if (err?.response?.status === 401) {
+        Alert.alert('Session Expired', 'Please login again');
+        router.replace('/(auth)/login');
+      } else {
+        Alert.alert('Error', 'Failed to load users. Please pull to refresh.');
+      }
     } finally {
       setLoading(false);
       setRefreshing(false);
@@ -88,13 +161,45 @@ export default function AdminDashboard() {
 
   useFocusEffect(
     useCallback(() => {
-      loadUsers();
-    }, [])
+      if (token) {
+        loadUsers();
+      }
+    }, [token])
   );
 
   const onRefresh = () => {
     setRefreshing(true);
     loadUsers();
+  };
+
+  const createAdmin = async () => {
+    if (!newAdmin.full_name || !newAdmin.phone || !newAdmin.email || !newAdmin.password) {
+      Alert.alert('Error', 'Please fill in all fields');
+      return;
+    }
+
+    if (newAdmin.password.length < 6) {
+      Alert.alert('Error', 'Password must be at least 6 characters');
+      return;
+    }
+
+    try {
+      const response = await api.post('/admin/users', newAdmin);
+      Alert.alert('Success', 'Admin created successfully');
+      setCreateAdminModal(false);
+      setNewAdmin({
+        full_name: '',
+        phone: '',
+        email: '',
+        password: '',
+        role: 'district_admin',
+        district_id: 1,
+      });
+      loadUsers();
+    } catch (err: any) {
+      console.log('Create admin error:', err);
+      Alert.alert('Error', err?.response?.data?.message || 'Failed to create admin');
+    }
   };
 
   const approveUser = async (id: number) => {
@@ -107,12 +212,40 @@ export default function AdminDashboard() {
           text: 'Approve',
           onPress: async () => {
             try {
-              await api.put(`/admin/users/${id}/approve`);
+              await api.patch(`/admin/users/${id}/approve`);
               Alert.alert('Success', 'User approved successfully');
-              loadUsers();
+              setUsers(prev => prev.map(u => 
+                u.id === id ? { ...u, status: 'active', is_verified: true } : u
+              ));
+              await loadStats();
             } catch (err: any) {
               console.log('Approve error:', err);
               Alert.alert('Error', err?.response?.data?.message || 'Failed to approve user');
+            }
+          },
+        },
+      ]
+    );
+  };
+
+  const rejectUser = async (id: number) => {
+    Alert.alert(
+      'Reject User',
+      'Are you sure you want to reject this user?',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Reject',
+          style: 'destructive',
+          onPress: async () => {
+            try {
+              await api.patch(`/admin/users/${id}/reject`);
+              Alert.alert('Success', 'User rejected successfully');
+              setUsers(prev => prev.filter(u => u.id !== id));
+              await loadStats();
+            } catch (err: any) {
+              console.log('Reject error:', err);
+              Alert.alert('Error', err?.response?.data?.message || 'Failed to reject user');
             }
           },
         },
@@ -131,12 +264,15 @@ export default function AdminDashboard() {
           style: 'destructive',
           onPress: async () => {
             try {
-              await api.put(`/admin/users/${id}/suspend`);
+              await api.patch(`/admin/users/${id}/suspend`);
               Alert.alert('Success', 'User suspended successfully');
-              loadUsers();
+              setUsers(prev => prev.map(u => 
+                u.id === id ? { ...u, status: 'suspended' } : u
+              ));
+              await loadStats();
             } catch (err: any) {
               console.log('Suspend error:', err);
-              Alert.alert('Error', 'Failed to suspend user');
+              Alert.alert('Error', err?.response?.data?.message || 'Failed to suspend user');
             }
           },
         },
@@ -146,12 +282,15 @@ export default function AdminDashboard() {
 
   const activateUser = async (id: number) => {
     try {
-      await api.put(`/admin/users/${id}/activate`);
+      await api.patch(`/admin/users/${id}/activate`);
       Alert.alert('Success', 'User activated successfully');
-      loadUsers();
+      setUsers(prev => prev.map(u => 
+        u.id === id ? { ...u, status: 'active' } : u
+      ));
+      await loadStats();
     } catch (err: any) {
       console.log('Activate error:', err);
-      Alert.alert('Error', 'Failed to activate user');
+      Alert.alert('Error', err?.response?.data?.message || 'Failed to activate user');
     }
   };
 
@@ -168,10 +307,11 @@ export default function AdminDashboard() {
             try {
               await api.delete(`/admin/users/${id}`);
               Alert.alert('Success', 'User deleted successfully');
-              loadUsers();
+              setUsers(prev => prev.filter(u => u.id !== id));
+              await loadStats();
             } catch (err: any) {
               console.log('Delete error:', err);
-              Alert.alert('Error', 'Failed to delete user');
+              Alert.alert('Error', err?.response?.data?.message || 'Failed to delete user');
             }
           },
         },
@@ -181,13 +321,16 @@ export default function AdminDashboard() {
 
   const updateUserRole = async (id: number, role: string) => {
     try {
-      await api.put(`/admin/users/${id}/role`, { role });
+      await api.patch(`/admin/users/${id}/role`, { role });
       Alert.alert('Success', 'User role updated successfully');
       setModalVisible(false);
-      loadUsers();
+      setUsers(prev => prev.map(u => 
+        u.id === id ? { ...u, role } : u
+      ));
+      await loadUsers();
     } catch (err: any) {
       console.log('Update role error:', err);
-      Alert.alert('Error', 'Failed to update user role');
+      Alert.alert('Error', err?.response?.data?.message || 'Failed to update user role');
     }
   };
 
@@ -208,7 +351,21 @@ export default function AdminDashboard() {
       case 'pending': return '#FF9800';
       case 'suspended': return '#f44336';
       case 'deactivated': return '#999';
+      case 'approved': return '#2196F3';
+      case 'rejected': return '#f44336';
       default: return '#666';
+    }
+  };
+
+  const getStatusLabel = (status: string) => {
+    switch (status) {
+      case 'active': return 'Active';
+      case 'pending': return 'Pending';
+      case 'suspended': return 'Suspended';
+      case 'deactivated': return 'Deactivated';
+      case 'approved': return 'Approved';
+      case 'rejected': return 'Rejected';
+      default: return status;
     }
   };
 
@@ -222,7 +379,18 @@ export default function AdminDashboard() {
     }
   };
 
+  const getRoleLabel = (role: string) => {
+    switch (role) {
+      case 'farmer': return 'Farmer';
+      case 'veterinarian': return 'Veterinarian';
+      case 'super_admin': return 'Super Admin';
+      case 'district_admin': return 'District Admin';
+      default: return role;
+    }
+  };
+
   const formatDate = (dateString: string) => {
+    if (!dateString) return 'N/A';
     const date = new Date(dateString);
     return date.toLocaleDateString('en-RW', {
       day: 'numeric',
@@ -241,87 +409,101 @@ export default function AdminDashboard() {
     </View>
   );
 
-  const renderUserCard = ({ item }: { item: User }) => (
-    <View style={styles.userCard}>
-      <View style={styles.userHeader}>
-        <View style={styles.userInfo}>
-          <Text style={styles.userName}>{item.full_name}</Text>
-          <View style={[styles.roleBadge, { backgroundColor: getRoleBadgeColor(item.role) + '20' }]}>
-            <Text style={[styles.roleText, { color: getRoleBadgeColor(item.role) }]}>
-              {item.role?.toUpperCase()}
+  const renderUserCard = ({ item }: { item: User }) => {
+    return (
+      <View style={styles.userCard}>
+        <View style={styles.userHeader}>
+          <View style={styles.userInfo}>
+            <Text style={styles.userName}>{item.full_name}</Text>
+            <View style={[styles.roleBadge, { backgroundColor: getRoleBadgeColor(item.role) + '20' }]}>
+              <Text style={[styles.roleText, { color: getRoleBadgeColor(item.role) }]}>
+                {getRoleLabel(item.role).toUpperCase()}
+              </Text>
+            </View>
+          </View>
+          <View style={[styles.statusBadge, { backgroundColor: getStatusColor(item.status) + '20' }]}>
+            <View style={[styles.statusDot, { backgroundColor: getStatusColor(item.status) }]} />
+            <Text style={[styles.statusText, { color: getStatusColor(item.status) }]}>
+              {getStatusLabel(item.status).toUpperCase()}
             </Text>
           </View>
         </View>
-        <View style={[styles.statusBadge, { backgroundColor: getStatusColor(item.status) + '20' }]}>
-          <View style={[styles.statusDot, { backgroundColor: getStatusColor(item.status) }]} />
-          <Text style={[styles.statusText, { color: getStatusColor(item.status) }]}>
-            {item.status?.toUpperCase()}
-          </Text>
-        </View>
-      </View>
 
-      <View style={styles.userDetails}>
-        <View style={styles.detailRow}>
-          <Ionicons name="call-outline" size={16} color="#666" />
-          <Text style={styles.detailText}>{item.phone}</Text>
-        </View>
-        <View style={styles.detailRow}>
-          <Ionicons name="mail-outline" size={16} color="#666" />
-          <Text style={styles.detailText}>{item.email}</Text>
-        </View>
-        {item.district_name && (
+        <View style={styles.userDetails}>
           <View style={styles.detailRow}>
-            <Ionicons name="location-outline" size={16} color="#666" />
-            <Text style={styles.detailText}>{item.district_name}</Text>
+            <Ionicons name="call-outline" size={16} color="#666" />
+            <Text style={styles.detailText}>{item.phone}</Text>
           </View>
-        )}
-        <View style={styles.detailRow}>
-          <Ionicons name="calendar-outline" size={16} color="#666" />
-          <Text style={styles.detailText}>Joined: {formatDate(item.created_at)}</Text>
+          <View style={styles.detailRow}>
+            <Ionicons name="mail-outline" size={16} color="#666" />
+            <Text style={styles.detailText}>{item.email}</Text>
+          </View>
+          {item.district_name && (
+            <View style={styles.detailRow}>
+              <Ionicons name="location-outline" size={16} color="#666" />
+              <Text style={styles.detailText}>{item.district_name}</Text>
+            </View>
+          )}
+          <View style={styles.detailRow}>
+            <Ionicons name="calendar-outline" size={16} color="#666" />
+            <Text style={styles.detailText}>Joined: {formatDate(item.created_at)}</Text>
+          </View>
+          <View style={styles.detailRow}>
+            <Ionicons name="checkmark-circle-outline" size={16} color="#666" />
+            <Text style={styles.detailText}>
+              {item.is_verified ? '✅ Verified' : '❌ Not Verified'}
+            </Text>
+          </View>
+        </View>
+
+        <View style={styles.actionButtons}>
+          {(item.status === 'pending' || item.status === 'approved') && (
+            <>
+              <TouchableOpacity style={styles.approveButton} onPress={() => approveUser(item.id)}>
+                <Ionicons name="checkmark-circle-outline" size={18} color="#fff" />
+                <Text style={styles.buttonText}>Approve</Text>
+              </TouchableOpacity>
+              <TouchableOpacity style={styles.rejectButton} onPress={() => rejectUser(item.id)}>
+                <Ionicons name="close-circle-outline" size={18} color="#fff" />
+                <Text style={styles.buttonText}>Reject</Text>
+              </TouchableOpacity>
+            </>
+          )}
+          
+          {item.status === 'suspended' && (
+            <TouchableOpacity style={styles.activateButton} onPress={() => activateUser(item.id)}>
+              <Ionicons name="play-circle-outline" size={18} color="#fff" />
+              <Text style={styles.buttonText}>Activate</Text>
+            </TouchableOpacity>
+          )}
+          
+          {item.status === 'active' && currentUser?.id !== item.id && (
+            <TouchableOpacity style={styles.suspendButton} onPress={() => suspendUser(item.id)}>
+              <Ionicons name="pause-circle-outline" size={18} color="#fff" />
+              <Text style={styles.buttonText}>Suspend</Text>
+            </TouchableOpacity>
+          )}
+          
+          <TouchableOpacity style={styles.editButton} onPress={() => openEditModal(item)}>
+            <Ionicons name="create-outline" size={18} color="#2196F3" />
+            <Text style={[styles.buttonText, { color: '#2196F3' }]}>Edit</Text>
+          </TouchableOpacity>
+          
+          {currentUser?.id !== item.id && isSuperAdmin && (
+            <TouchableOpacity style={styles.deleteButton} onPress={() => deleteUser(item.id)}>
+              <Ionicons name="trash-outline" size={18} color="#f44336" />
+              <Text style={[styles.buttonText, { color: '#f44336' }]}>Delete</Text>
+            </TouchableOpacity>
+          )}
         </View>
       </View>
-
-      <View style={styles.actionButtons}>
-        {item.status === 'pending' && (
-          <TouchableOpacity style={styles.approveButton} onPress={() => approveUser(item.id)}>
-            <Ionicons name="checkmark-circle-outline" size={18} color="#fff" />
-            <Text style={styles.buttonText}>Approve</Text>
-          </TouchableOpacity>
-        )}
-        
-        {item.status === 'suspended' && (
-          <TouchableOpacity style={styles.activateButton} onPress={() => activateUser(item.id)}>
-            <Ionicons name="play-circle-outline" size={18} color="#fff" />
-            <Text style={styles.buttonText}>Activate</Text>
-          </TouchableOpacity>
-        )}
-        
-        {item.status === 'active' && currentUser?.id !== item.id && (
-          <TouchableOpacity style={styles.suspendButton} onPress={() => suspendUser(item.id)}>
-            <Ionicons name="pause-circle-outline" size={18} color="#fff" />
-            <Text style={styles.buttonText}>Suspend</Text>
-          </TouchableOpacity>
-        )}
-        
-        <TouchableOpacity style={styles.editButton} onPress={() => openEditModal(item)}>
-          <Ionicons name="create-outline" size={18} color="#2196F3" />
-          <Text style={[styles.buttonText, { color: '#2196F3' }]}>Edit</Text>
-        </TouchableOpacity>
-        
-        {currentUser?.id !== item.id && (
-          <TouchableOpacity style={styles.deleteButton} onPress={() => deleteUser(item.id)}>
-            <Ionicons name="trash-outline" size={18} color="#f44336" />
-            <Text style={[styles.buttonText, { color: '#f44336' }]}>Delete</Text>
-          </TouchableOpacity>
-        )}
-      </View>
-    </View>
-  );
+    );
+  };
 
   if (loading && !refreshing) {
     return (
       <View style={styles.centerContainer}>
-        <ActivityIndicator size="large" color="#2E7D32" />
+        <ActivityIndicator size="large" color="#D32F2F" />
         <Text style={styles.loadingText}>Loading dashboard...</Text>
       </View>
     );
@@ -331,38 +513,77 @@ export default function AdminDashboard() {
     <View style={styles.container}>
       <ScrollView
         refreshControl={
-          <RefreshControl refreshing={refreshing} onRefresh={onRefresh} colors={['#2E7D32']} />
+          <RefreshControl refreshing={refreshing} onRefresh={onRefresh} colors={['#D32F2F']} />
         }
         showsVerticalScrollIndicator={false}
       >
-        {/* Header */}
         <View style={styles.header}>
-          <Text style={styles.headerTitle}>Admin Dashboard</Text>
-          <Text style={styles.headerSubtitle}>Manage users and system access</Text>
+          <View style={styles.headerLeft}>
+            <Text style={styles.headerTitle}>
+              {isSuperAdmin ? 'Super Admin Dashboard' : 'District Admin Dashboard'}
+            </Text>
+            <Text style={styles.headerSubtitle}>
+              {isSuperAdmin 
+                ? 'Full system access and management' 
+                : 'Manage users in your district'}
+            </Text>
+            {isSuperAdmin && (
+              <View style={styles.adminBadge}>
+                <Ionicons name="shield-checkmark" size={16} color="#fff" />
+                <Text style={styles.adminBadgeText}>Super Admin</Text>
+              </View>
+            )}
+          </View>
+          
+          <View style={styles.headerActions}>
+            {/* ✅ Admin Management Button - Navigate to Admin Management Screen */}
+            {isSuperAdmin && (
+              <TouchableOpacity 
+                onPress={() => router.push('/(admin)/admin-management')} 
+                style={styles.adminManagementButton}
+              >
+                <Ionicons name="shield-outline" size={24} color="#fff" />
+              </TouchableOpacity>
+            )}
+            
+            {/* ✅ Create Admin Button */}
+            {isSuperAdmin && (
+              <TouchableOpacity 
+                onPress={() => setCreateAdminModal(true)} 
+                style={styles.createAdminButton}
+              >
+                <Ionicons name="person-add" size={24} color="#fff" />
+              </TouchableOpacity>
+            )}
+            
+            <TouchableOpacity onPress={handleLogout} style={styles.logoutButton}>
+              <Ionicons name="log-out-outline" size={24} color="#fff" />
+            </TouchableOpacity>
+          </View>
         </View>
 
-        {/* Stats Grid */}
         <View style={styles.statsGrid}>
-          {renderStatCard('Total Users', stats.total_users, 'people-outline', '#2196F3')}
-          {renderStatCard('Farmers', stats.total_farmers, 'person-outline', '#4CAF50')}
-          {renderStatCard('Veterinarians', stats.total_veterinarians, 'medkit-outline', '#9C27B0')}
-          {renderStatCard('Pending', stats.pending_approvals, 'time-outline', '#FF9800')}
+          {renderStatCard('Total Users', stats.total_users || users.length, 'people-outline', '#2196F3')}
+          {renderStatCard('Farmers', stats.total_farmers || 0, 'person-outline', '#4CAF50')}
+          {renderStatCard('Veterinarians', stats.total_veterinarians || 0, 'medkit-outline', '#9C27B0')}
+          {renderStatCard('Pending', stats.pending_approvals || 0, 'time-outline', '#FF9800')}
         </View>
 
-        {/* Users List */}
-        <Text style={styles.sectionTitle}>All Users</Text>
-        <FlatList
-          data={users}
-          keyExtractor={(item) => item.id.toString()}
-          renderItem={renderUserCard}
-          scrollEnabled={false}
-          ListEmptyComponent={
-            <View style={styles.emptyContainer}>
-              <Ionicons name="people-outline" size={60} color="#ccc" />
-              <Text style={styles.emptyText}>No users found</Text>
-            </View>
-          }
-        />
+        <Text style={styles.sectionTitle}>All Users ({users.length})</Text>
+        {users.length === 0 ? (
+          <View style={styles.emptyContainer}>
+            <Ionicons name="people-outline" size={60} color="#ccc" />
+            <Text style={styles.emptyText}>No users found</Text>
+            <Text style={styles.emptySubtext}>Pull down to refresh</Text>
+          </View>
+        ) : (
+          <FlatList
+            data={users}
+            keyExtractor={(item) => item.id.toString()}
+            renderItem={renderUserCard}
+            scrollEnabled={false}
+          />
+        )}
       </ScrollView>
 
       {/* Edit User Modal */}
@@ -448,6 +669,101 @@ export default function AdminDashboard() {
           </View>
         </View>
       </Modal>
+
+      {/* Create Admin Modal */}
+      <Modal
+        animationType="slide"
+        transparent={true}
+        visible={createAdminModal}
+        onRequestClose={() => setCreateAdminModal(false)}
+      >
+        <View style={styles.modalOverlay}>
+          <View style={styles.modalContent}>
+            <View style={styles.modalHeader}>
+              <Text style={styles.modalTitle}>Create Admin</Text>
+              <TouchableOpacity onPress={() => setCreateAdminModal(false)}>
+                <Ionicons name="close" size={24} color="#666" />
+              </TouchableOpacity>
+            </View>
+
+            <ScrollView>
+              <View style={styles.inputContainer}>
+                <Text style={styles.inputLabel}>Full Name *</Text>
+                <TextInput
+                  style={styles.input}
+                  value={newAdmin.full_name}
+                  onChangeText={(text) => setNewAdmin({ ...newAdmin, full_name: text })}
+                  placeholder="Enter full name"
+                />
+              </View>
+
+              <View style={styles.inputContainer}>
+                <Text style={styles.inputLabel}>Phone *</Text>
+                <TextInput
+                  style={styles.input}
+                  value={newAdmin.phone}
+                  onChangeText={(text) => setNewAdmin({ ...newAdmin, phone: text })}
+                  placeholder="Enter phone number"
+                  keyboardType="phone-pad"
+                />
+              </View>
+
+              <View style={styles.inputContainer}>
+                <Text style={styles.inputLabel}>Email *</Text>
+                <TextInput
+                  style={styles.input}
+                  value={newAdmin.email}
+                  onChangeText={(text) => setNewAdmin({ ...newAdmin, email: text })}
+                  placeholder="Enter email"
+                  keyboardType="email-address"
+                  autoCapitalize="none"
+                />
+              </View>
+
+              <View style={styles.inputContainer}>
+                <Text style={styles.inputLabel}>Password *</Text>
+                <TextInput
+                  style={styles.input}
+                  value={newAdmin.password}
+                  onChangeText={(text) => setNewAdmin({ ...newAdmin, password: text })}
+                  placeholder="Enter password (min 6 chars)"
+                  secureTextEntry
+                />
+              </View>
+
+              <View style={styles.inputContainer}>
+                <Text style={styles.inputLabel}>Role</Text>
+                <View style={styles.roleContainer}>
+                  {['district_admin'].map((role) => (
+                    <TouchableOpacity
+                      key={role}
+                      style={[
+                        styles.roleOption,
+                        newAdmin.role === role && styles.roleOptionActive,
+                      ]}
+                      onPress={() => setNewAdmin({ ...newAdmin, role })}
+                    >
+                      <Text style={[
+                        styles.roleOptionText,
+                        newAdmin.role === role && styles.roleOptionTextActive,
+                      ]}>
+                        {role.toUpperCase()}
+                      </Text>
+                    </TouchableOpacity>
+                  ))}
+                </View>
+              </View>
+
+              <TouchableOpacity
+                style={styles.updateButton}
+                onPress={createAdmin}
+              >
+                <Text style={styles.updateButtonText}>Create Admin</Text>
+              </TouchableOpacity>
+            </ScrollView>
+          </View>
+        </View>
+      </Modal>
     </View>
   );
 }
@@ -469,9 +785,16 @@ const styles = StyleSheet.create({
     color: '#666',
   },
   header: {
-    backgroundColor: '#2E7D32',
+    backgroundColor: '#D32F2F',
     padding: 20,
     paddingBottom: 25,
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'flex-start',
+  },
+  headerLeft: {
+    flex: 1,
+    marginRight: 12,
   },
   headerTitle: {
     fontSize: 24,
@@ -480,8 +803,44 @@ const styles = StyleSheet.create({
   },
   headerSubtitle: {
     fontSize: 14,
-    color: '#E8F5E9',
+    color: '#FFCDD2',
     marginTop: 5,
+  },
+  adminBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: 'rgba(255,255,255,0.2)',
+    paddingHorizontal: 12,
+    paddingVertical: 4,
+    borderRadius: 12,
+    marginTop: 8,
+    gap: 6,
+    alignSelf: 'flex-start',
+  },
+  adminBadgeText: {
+    color: '#fff',
+    fontSize: 12,
+    fontWeight: '600',
+  },
+  headerActions: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+  },
+  adminManagementButton: {
+    padding: 10,
+    backgroundColor: 'rgba(255,255,255,0.2)',
+    borderRadius: 10,
+  },
+  createAdminButton: {
+    padding: 10,
+    backgroundColor: 'rgba(255,255,255,0.2)',
+    borderRadius: 10,
+  },
+  logoutButton: {
+    padding: 10,
+    backgroundColor: 'rgba(255,255,255,0.2)',
+    borderRadius: 10,
   },
   statsGrid: {
     flexDirection: 'row',
@@ -544,6 +903,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: 8,
+    flexWrap: 'wrap',
   },
   userName: {
     fontSize: 16,
@@ -606,6 +966,15 @@ const styles = StyleSheet.create({
     borderRadius: 6,
     gap: 4,
   },
+  rejectButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#f44336',
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 6,
+    gap: 4,
+  },
   suspendButton: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -656,6 +1025,11 @@ const styles = StyleSheet.create({
     color: '#999',
     marginTop: 12,
   },
+  emptySubtext: {
+    fontSize: 12,
+    color: '#ccc',
+    marginTop: 4,
+  },
   modalOverlay: {
     flex: 1,
     backgroundColor: 'rgba(0,0,0,0.5)',
@@ -695,6 +1069,7 @@ const styles = StyleSheet.create({
     borderRadius: 8,
     padding: 12,
     fontSize: 16,
+    backgroundColor: '#fff',
   },
   roleContainer: {
     flexDirection: 'row',

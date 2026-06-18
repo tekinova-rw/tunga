@@ -11,6 +11,7 @@ import {
   TextInput,
   TouchableOpacity,
   View,
+  StyleSheet,
 } from 'react-native';
 
 import { Ionicons } from '@expo/vector-icons';
@@ -122,6 +123,10 @@ export default function LoginScreen() {
           errorMessage = 'Your account has been suspended. Please contact support.';
         } else if (errorMessage === 'Invalid credentials') {
           errorMessage = 'Invalid email/phone or password. Please try again.';
+        } else if (errorMessage === 'Account has been deleted') {
+          errorMessage = 'Your account has been deleted. Please contact support.';
+        } else if (errorMessage === 'Account is deactivated') {
+          errorMessage = 'Your account is deactivated. Please contact support.';
         }
       } else if (error.message === 'Network Error') {
         errorMessage = `Network error - cannot connect to ${api.defaults.baseURL}`;
@@ -133,6 +138,12 @@ export default function LoginScreen() {
     } finally {
       setLoading(false);
     }
+  };
+
+  const handleForgotPassword = () => {
+    router.push({
+      pathname: '/(auth)/forgot-password',
+    } as any);
   };
 
   return (
@@ -149,22 +160,16 @@ export default function LoginScreen() {
         }}
       >
         {/* HEADER */}
-        <View style={{ alignItems: 'center', marginBottom: 30 }}>
-          <Text style={{ fontSize: 50 }}>🐄</Text>
-
-          <Text style={{ fontSize: 26, fontWeight: '700', color: '#1B5E20' }}>
-            VetConnect Rwanda
-          </Text>
-
-          <Text style={{ color: '#666', textAlign: 'center', marginTop: 5 }}>
+        <View style={styles.headerContainer}>
+          <Text style={styles.headerIcon}>🐄</Text>
+          <Text style={styles.headerTitle}>VetConnect Rwanda</Text>
+          <Text style={styles.headerSubtitle}>
             Connect with veterinary professionals
           </Text>
         </View>
 
         {/* EMAIL OR PHONE */}
-        <Text style={{ marginBottom: 5, fontWeight: '500' }}>
-          Email or Phone
-        </Text>
+        <Text style={styles.label}>Email or Phone</Text>
 
         <Controller
           control={control}
@@ -174,13 +179,10 @@ export default function LoginScreen() {
           }}
           render={({ field: { onChange, value } }) => (
             <TextInput
-              style={{
-                borderWidth: 1,
-                borderColor: errors.identifier ? '#ff4444' : '#ddd',
-                padding: 12,
-                borderRadius: 10,
-                fontSize: 16,
-              }}
+              style={[
+                styles.input,
+                errors.identifier && styles.inputError,
+              ]}
               placeholder="email@example.com or 078XXXXXXX"
               autoCapitalize="none"
               keyboardType="default"
@@ -191,26 +193,13 @@ export default function LoginScreen() {
         />
 
         {errors.identifier && (
-          <Text style={{ color: '#ff4444', marginTop: 5, fontSize: 12 }}>
-            {errors.identifier.message}
-          </Text>
+          <Text style={styles.errorText}>{errors.identifier.message}</Text>
         )}
 
         {/* PASSWORD */}
-        <Text style={{ marginTop: 15, marginBottom: 5, fontWeight: '500' }}>
-          Password
-        </Text>
+        <Text style={[styles.label, { marginTop: 15 }]}>Password</Text>
 
-        <View
-          style={{
-            flexDirection: 'row',
-            borderWidth: 1,
-            borderColor: errors.password ? '#ff4444' : '#ddd',
-            borderRadius: 10,
-            alignItems: 'center',
-            paddingHorizontal: 10,
-          }}
-        >
+        <View style={styles.passwordContainer}>
           <Controller
             control={control}
             name="password"
@@ -223,7 +212,10 @@ export default function LoginScreen() {
             }}
             render={({ field: { onChange, value } }) => (
               <TextInput
-                style={{ flex: 1, padding: 12, fontSize: 16 }}
+                style={[
+                  styles.passwordInput,
+                  errors.password && styles.inputError,
+                ]}
                 secureTextEntry={!showPassword}
                 placeholder="Enter your password"
                 value={value}
@@ -235,6 +227,7 @@ export default function LoginScreen() {
           <TouchableOpacity 
             onPress={() => setShowPassword(!showPassword)}
             hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+            style={styles.eyeIcon}
           >
             <Ionicons
               name={showPassword ? 'eye-off-outline' : 'eye-outline'}
@@ -245,60 +238,44 @@ export default function LoginScreen() {
         </View>
 
         {errors.password && (
-          <Text style={{ color: '#ff4444', marginTop: 5, fontSize: 12 }}>
-            {errors.password.message}
-          </Text>
+          <Text style={styles.errorText}>{errors.password.message}</Text>
         )}
 
         {/* FORGOT PASSWORD LINK */}
         <TouchableOpacity 
-          onPress={() => router.push('/(auth)/forgot-password')}
-          style={{ alignSelf: 'flex-end', marginTop: 8 }}
+          onPress={handleForgotPassword}
+          style={styles.forgotPasswordLink}
         >
-          <Text style={{ color: '#2E7D32', fontSize: 12 }}>
-            Forgot Password?
-          </Text>
+          <Text style={styles.forgotPasswordText}>Forgot Password?</Text>
         </TouchableOpacity>
 
         {/* LOGIN BUTTON */}
         <TouchableOpacity
           onPress={handleSubmit(onSubmit)}
           disabled={loading}
-          style={{
-            backgroundColor: '#2E7D32',
-            padding: 15,
-            borderRadius: 10,
-            marginTop: 20,
-            alignItems: 'center',
-            opacity: loading ? 0.7 : 1,
-          }}
+          style={[styles.loginButton, loading && styles.loginButtonDisabled]}
         >
           {loading ? (
             <ActivityIndicator color="#fff" />
           ) : (
-            <Text style={{ color: '#fff', fontWeight: '700', fontSize: 16 }}>
-              Login
-            </Text>
+            <Text style={styles.loginButtonText}>Login</Text>
           )}
         </TouchableOpacity>
 
         {/* REGISTER LINK */}
-        <View style={{ flexDirection: 'row', justifyContent: 'center', marginTop: 20 }}>
-          <Text>Don't have an account? </Text>
-
+        <View style={styles.registerContainer}>
+          <Text style={styles.registerText}>Don't have an account? </Text>
           <Link href="/(auth)/register" asChild>
             <TouchableOpacity>
-              <Text style={{ color: '#2E7D32', fontWeight: '700' }}>
-                Register
-              </Text>
+              <Text style={styles.registerLink}>Register</Text>
             </TouchableOpacity>
           </Link>
         </View>
 
         {/* DEBUG INFO - Remove in production */}
         {__DEV__ && (
-          <View style={{ marginTop: 20, padding: 10, backgroundColor: '#f0f0f0', borderRadius: 8 }}>
-            <Text style={{ fontSize: 10, color: '#666', textAlign: 'center' }}>
+          <View style={styles.debugContainer}>
+            <Text style={styles.debugText}>
               API: {api.defaults.baseURL}
             </Text>
           </View>
@@ -307,3 +284,110 @@ export default function LoginScreen() {
     </KeyboardAvoidingView>
   );
 }
+
+const styles = StyleSheet.create({
+  headerContainer: {
+    alignItems: 'center',
+    marginBottom: 30,
+  },
+  headerIcon: {
+    fontSize: 50,
+  },
+  headerTitle: {
+    fontSize: 26,
+    fontWeight: '700',
+    color: '#1B5E20',
+  },
+  headerSubtitle: {
+    color: '#666',
+    textAlign: 'center',
+    marginTop: 5,
+  },
+  label: {
+    marginBottom: 5,
+    fontWeight: '500',
+    color: '#333',
+  },
+  input: {
+    borderWidth: 1,
+    borderColor: '#ddd',
+    padding: 12,
+    borderRadius: 10,
+    fontSize: 16,
+    backgroundColor: '#fff',
+  },
+  inputError: {
+    borderColor: '#ff4444',
+  },
+  errorText: {
+    color: '#ff4444',
+    marginTop: 5,
+    fontSize: 12,
+  },
+  passwordContainer: {
+    flexDirection: 'row',
+    borderWidth: 1,
+    borderColor: '#ddd',
+    borderRadius: 10,
+    alignItems: 'center',
+    paddingHorizontal: 10,
+    backgroundColor: '#fff',
+  },
+  passwordInput: {
+    flex: 1,
+    padding: 12,
+    fontSize: 16,
+    color: '#333',
+  },
+  eyeIcon: {
+    padding: 8,
+  },
+  forgotPasswordLink: {
+    alignSelf: 'flex-end',
+    marginTop: 8,
+  },
+  forgotPasswordText: {
+    color: '#2E7D32',
+    fontSize: 12,
+  },
+  loginButton: {
+    backgroundColor: '#2E7D32',
+    padding: 15,
+    borderRadius: 10,
+    marginTop: 20,
+    alignItems: 'center',
+  },
+  loginButtonDisabled: {
+    opacity: 0.7,
+  },
+  loginButtonText: {
+    color: '#fff',
+    fontWeight: '700',
+    fontSize: 16,
+  },
+  registerContainer: {
+    flexDirection: 'row',
+    justifyContent: 'center',
+    marginTop: 20,
+  },
+  registerText: {
+    color: '#666',
+    fontSize: 14,
+  },
+  registerLink: {
+    color: '#2E7D32',
+    fontWeight: '700',
+    fontSize: 14,
+  },
+  debugContainer: {
+    marginTop: 20,
+    padding: 10,
+    backgroundColor: '#f0f0f0',
+    borderRadius: 8,
+  },
+  debugText: {
+    fontSize: 10,
+    color: '#666',
+    textAlign: 'center',
+  },
+});

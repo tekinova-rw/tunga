@@ -38,7 +38,8 @@ const getBaseURL = (): string => {
     if (Platform.OS === 'ios') {
       return 'http://localhost:5000/api';
     }
-    return 'http://10.7.33.244:5000/api';
+    // For physical device - use your computer's IP
+    return 'http://10.7.33.242:5000/api'; // ✅ Updated to your current IP
   }
   return 'https://api.vetconnect.rw/api';
 };
@@ -303,6 +304,31 @@ export const checkApiHealth = async (): Promise<boolean> => {
 
 export const getCurrentApiUrl = (): string => {
   return getBaseURL();
+};
+
+// ✅ Add a utility to check if API is reachable
+export const pingApi = async (): Promise<boolean> => {
+  try {
+    await api.get('/api/test', { timeout: 5000 });
+    return true;
+  } catch (error) {
+    console.error('API ping failed:', error);
+    return false;
+  }
+};
+
+// ✅ Add a utility to get API status
+export const getApiStatus = async (): Promise<{
+  online: boolean;
+  url: string;
+  timestamp: string;
+}> => {
+  const online = await pingApi();
+  return {
+    online,
+    url: getBaseURL(),
+    timestamp: new Date().toISOString(),
+  };
 };
 
 export default api;

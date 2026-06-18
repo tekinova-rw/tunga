@@ -74,52 +74,54 @@ export default function VetDashboard() {
     } catch (error: any) {
       console.log('Dashboard fetch error:', error?.response?.data || error.message);
       
-      if (error?.response?.status === 404) {
-        // Use mock data for demo
-        setStats({
-          pending_requests: 3,
-          active_consultations: 2,
-          completed_consultations: 15,
-          total_farmers_served: 8,
-          today_appointments: 2,
-          unread_messages: 4,
-          recent_requests: [
-            {
-              id: '1',
-              farmer_name: 'John Farmer',
-              farmer_phone: '0788888888',
-              animal_name: 'Bella',
-              animal_category: 'Cow',
-              issue_type: 'Sickness',
-              priority: 'high',
-              description: 'Not eating properly and seems weak',
-              created_at: new Date().toISOString(),
-            },
-            {
-              id: '2',
-              farmer_name: 'Jane Doe',
-              farmer_phone: '0788888889',
-              animal_name: 'Molly',
-              animal_category: 'Goat',
-              issue_type: 'Vaccination',
-              priority: 'medium',
-              description: 'Due for annual vaccination',
-              created_at: new Date().toISOString(),
-            },
-            {
-              id: '3',
-              farmer_name: 'Peter Smith',
-              farmer_phone: '0788888890',
-              animal_name: 'Max',
-              animal_category: 'Cow',
-              issue_type: 'Emergency',
-              priority: 'emergency',
-              description: 'Difficulty giving birth, need immediate assistance',
-              created_at: new Date().toISOString(),
-            },
-          ],
-        });
-      } else if (error?.response?.status === 401) {
+      // Use mock data for demo/development
+      const mockData = {
+        pending_requests: 3,
+        active_consultations: 2,
+        completed_consultations: 15,
+        total_farmers_served: 8,
+        today_appointments: 2,
+        unread_messages: 4,
+        recent_requests: [
+          {
+            id: '1',
+            farmer_name: 'John Farmer',
+            farmer_phone: '0788888888',
+            animal_name: 'Bella',
+            animal_category: 'Cow',
+            issue_type: 'Sickness',
+            priority: 'high',
+            description: 'Not eating properly and seems weak',
+            created_at: new Date().toISOString(),
+          },
+          {
+            id: '2',
+            farmer_name: 'Jane Doe',
+            farmer_phone: '0788888889',
+            animal_name: 'Molly',
+            animal_category: 'Goat',
+            issue_type: 'Vaccination',
+            priority: 'medium',
+            description: 'Due for annual vaccination',
+            created_at: new Date().toISOString(),
+          },
+          {
+            id: '3',
+            farmer_name: 'Peter Smith',
+            farmer_phone: '0788888890',
+            animal_name: 'Max',
+            animal_category: 'Cow',
+            issue_type: 'Emergency',
+            priority: 'emergency',
+            description: 'Difficulty giving birth, need immediate assistance',
+            created_at: new Date().toISOString(),
+          },
+        ],
+      };
+      
+      setStats(mockData);
+      
+      if (error?.response?.status === 401) {
         Alert.alert('Session Expired', 'Please login again');
         router.replace('/(auth)/login');
       }

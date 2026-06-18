@@ -22,7 +22,9 @@ type Animal = {
   category: string;
   breed?: string;
   age?: number;
+  weight?: number;
   health_status?: string;
+  created_at?: string;
 };
 
 export default function AnimalsScreen() {
@@ -39,7 +41,10 @@ export default function AnimalsScreen() {
       }
 
       console.log('Fetching animals...');
-      const response = await api.get('/farmer/animals');
+      // ✅ FIX: Use /animals instead of /farmer/animals
+      const response = await api.get('/animals');
+      
+      console.log('Animals response:', response.data);
       
       // Handle different response formats
       const animalsData = Array.isArray(response.data) 
@@ -57,8 +62,9 @@ export default function AnimalsScreen() {
         // Endpoint not found yet - use mock data for now
         console.log('API endpoint not ready, using mock data');
         setAnimals([
-          { id: '1', name: 'Bella', category: 'Cow' },
-          { id: '2', name: 'Molly', category: 'Goat' },
+          { id: '1', name: 'Bella', category: 'Cow', breed: 'Friesian', health_status: 'healthy' },
+          { id: '2', name: 'Molly', category: 'Goat', breed: 'Saanen', health_status: 'healthy' },
+          { id: '3', name: 'Max', category: 'Cow', breed: 'Holstein', health_status: 'sick' },
         ]);
       } else {
         Alert.alert('Error', 'Failed to load animals');
@@ -91,11 +97,13 @@ export default function AnimalsScreen() {
           style: 'destructive',
           onPress: async () => {
             try {
-              await api.delete(`/farmer/animals/${id}`);
+              // ✅ FIX: Use /animals instead of /farmer/animals
+              await api.delete(`/animals/${id}`);
               setAnimals(prev => prev.filter(a => a.id !== id));
-              Alert.alert('Success', 'Animal deleted');
+              Alert.alert('Success', 'Animal deleted successfully');
             } catch (error: any) {
-              Alert.alert('Error', 'Failed to delete');
+              console.log('Delete error:', error?.response?.data);
+              Alert.alert('Error', error?.response?.data?.message || 'Failed to delete animal');
             }
           },
         },
@@ -103,10 +111,41 @@ export default function AnimalsScreen() {
     );
   };
 
+  const getHealthStatusColor = (status: string) => {
+    switch (status?.toLowerCase()) {
+      case 'healthy': return '#4CAF50';
+      case 'sick': return '#f44336';
+      case 'recovering': return '#FF9800';
+      case 'under treatment': return '#2196F3';
+      case 'pregnant': return '#9C27B0';
+      case 'critical': return '#D32F2F';
+      default: return '#999';
+    }
+  };
+
+  const getHealthStatusLabel = (status: string) => {
+    if (!status) return 'Unknown';
+    return status.charAt(0).toUpperCase() + status.slice(1);
+  };
+
+  const getCategoryIcon = (category: string) => {
+    switch (category?.toLowerCase()) {
+      case 'cow': return '🐄';
+      case 'goat': return '🐐';
+      case 'sheep': return '🐑';
+      case 'pig': return '🐷';
+      case 'chicken': return '🐔';
+      case 'rabbit': return '🐰';
+      case 'horse': return '🐴';
+      default: return '🐾';
+    }
+  };
+
   if (loading) {
     return (
       <View style={styles.loadingContainer}>
         <ActivityIndicator size="large" color="#2E7D32" />
+        <Text style={styles.loadingText}>Loading animals...</Text>
       </View>
     );
   }
@@ -117,7 +156,8 @@ export default function AnimalsScreen() {
         style={styles.addButton}
         onPress={() => router.push('/(farmer)/animals/add')}
       >
-        <Text style={styles.addText}>+ Add Animal</Text>
+        <Ionicons name="add-circle-outline" size={24} color="#fff" />
+        <Text style={styles.addText}>Add Animal</Text>
       </TouchableOpacity>
 
       <FlatList
@@ -128,10 +168,12 @@ export default function AnimalsScreen() {
             refreshing={refreshing}
             onRefresh={onRefresh}
             colors={['#2E7D32']}
+            tintColor="#2E7D32"
           />
         }
         ListEmptyComponent={
           <View style={styles.emptyContainer}>
+            <Ionicons name="paw-outline" size={60} color="#ccc" />
             <Text style={styles.emptyText}>No animals yet</Text>
             <Text style={styles.emptySubtext}>Tap "Add Animal" to get started</Text>
           </View>
@@ -139,14 +181,25 @@ export default function AnimalsScreen() {
         renderItem={({ item }) => (
           <TouchableOpacity
             style={styles.card}
-            onPress={() => router.push(`/(farmer)/animals/${item.id}`)}
+            onPress={() => router.push({
+              pathname: '/(farmer)/animals/[id]',
+              params: { id: item.id }
+            } as any)}
             activeOpacity={0.7}
           >
             <View style={styles.cardRow}>
+              <View style={styles.cardIconContainer}>
+                <Text style={styles.cardIcon}>{getCategoryIcon(item.category)}</Text>
+              </View>
               <View style={styles.cardInfo}>
                 <Text style={styles.name}>{item.name}</Text>
                 <Text style={styles.category}>{item.category}</Text>
                 {item.breed && <Text style={styles.breed}>{item.breed}</Text>}
+                {item.age !== undefined && (
+                  <Text style={styles.age}>
+                    {item.age} {item.age === 1 ? 'year' : 'years'} old
+                  </Text>
+                )}
               </View>
               <TouchableOpacity
                 onPress={() => handleDelete(item.id, item.name)}
@@ -156,16 +209,23 @@ export default function AnimalsScreen() {
               </TouchableOpacity>
             </View>
             {item.health_status && (
-              <View style={[
-                styles.healthBadge,
-                item.health_status === 'healthy' && styles.healthHealthy,
-                item.health_status === 'sick' && styles.healthSick,
-              ]}>
-                <Text style={styles.healthText}>{item.health_status}</Text>
+              <View style={styles.healthContainer}>
+                <View style={[
+                  styles.healthDot,
+                  { backgroundColor: getHealthStatusColor(item.health_status) }
+                ]} />
+                <Text style={[
+                  styles.healthText,
+                  { color: getHealthStatusColor(item.health_status) }
+                ]}>
+                  {getHealthStatusLabel(item.health_status)}
+                </Text>
               </View>
             )}
           </TouchableOpacity>
         )}
+        contentContainerStyle={styles.listContent}
+        showsVerticalScrollIndicator={false}
       />
     </View>
   );
@@ -174,7 +234,6 @@ export default function AnimalsScreen() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    padding: 16,
     backgroundColor: '#f5f5f5',
   },
   loadingContainer: {
@@ -183,11 +242,20 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     backgroundColor: '#f5f5f5',
   },
+  loadingText: {
+    marginTop: 12,
+    fontSize: 16,
+    color: '#666',
+  },
   addButton: {
     backgroundColor: '#2E7D32',
     padding: 15,
     borderRadius: 12,
-    marginBottom: 20,
+    margin: 16,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
     elevation: 2,
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 2 },
@@ -196,9 +264,12 @@ const styles = StyleSheet.create({
   },
   addText: {
     color: '#fff',
-    textAlign: 'center',
     fontWeight: 'bold',
     fontSize: 16,
+  },
+  listContent: {
+    paddingHorizontal: 16,
+    paddingBottom: 16,
   },
   card: {
     backgroundColor: '#fff',
@@ -213,8 +284,19 @@ const styles = StyleSheet.create({
   },
   cardRow: {
     flexDirection: 'row',
-    justifyContent: 'space-between',
     alignItems: 'center',
+  },
+  cardIconContainer: {
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    backgroundColor: '#E8F5E9',
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginRight: 12,
+  },
+  cardIcon: {
+    fontSize: 24,
   },
   cardInfo: {
     flex: 1,
@@ -223,37 +305,42 @@ const styles = StyleSheet.create({
     fontSize: 18,
     fontWeight: '600',
     color: '#1B5E20',
-    marginBottom: 4,
+    marginBottom: 2,
   },
   category: {
     fontSize: 14,
     color: '#666',
+    marginBottom: 1,
   },
   breed: {
     fontSize: 12,
     color: '#999',
-    marginTop: 2,
+  },
+  age: {
+    fontSize: 12,
+    color: '#999',
+    marginTop: 1,
   },
   deleteButton: {
     padding: 8,
   },
-  healthBadge: {
+  healthContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
     marginTop: 10,
-    paddingHorizontal: 10,
-    paddingVertical: 4,
-    borderRadius: 12,
-    alignSelf: 'flex-start',
+    paddingTop: 10,
+    borderTopWidth: 1,
+    borderTopColor: '#f0f0f0',
+    gap: 6,
   },
-  healthHealthy: {
-    backgroundColor: '#E8F5E9',
-  },
-  healthSick: {
-    backgroundColor: '#FFEBEE',
+  healthDot: {
+    width: 8,
+    height: 8,
+    borderRadius: 4,
   },
   healthText: {
-    fontSize: 10,
-    fontWeight: '600',
-    color: '#2E7D32',
+    fontSize: 12,
+    fontWeight: '500',
   },
   emptyContainer: {
     flex: 1,
@@ -265,6 +352,7 @@ const styles = StyleSheet.create({
     fontSize: 18,
     fontWeight: '600',
     color: '#666',
+    marginTop: 16,
   },
   emptySubtext: {
     fontSize: 14,

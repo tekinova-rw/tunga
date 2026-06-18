@@ -1,43 +1,35 @@
-// src/app/(vet)/index.tsx
+// src/app/(admin)/index.tsx
 import React, { useEffect } from 'react';
-import { ActivityIndicator, View } from 'react-native';
+import { ActivityIndicator, View, Text } from 'react-native';
 import { Redirect } from 'expo-router';
 
 import { useAuthStore } from '@/store/auth-store';
 
-export default function VetIndex() {
-  const { user, hydrated, hydrate } = useAuthStore();
+export default function AdminIndex() {
+  const { user, hydrated, hydrate, isLoading } = useAuthStore();
 
-  /**
-   * 🚨 Hydrate ONCE at app start
-   */
   useEffect(() => {
     if (!hydrated) {
       hydrate();
     }
   }, [hydrated]);
 
-  /**
-   * ⏳ Loading gate
-   */
-  if (!hydrated) {
+  // Show loading while hydrating
+  if (!hydrated || isLoading) {
     return (
       <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: '#f5f5f5' }}>
-        <ActivityIndicator size="large" color="#2196F3" />
+        <ActivityIndicator size="large" color="#D32F2F" />
+        <Text style={{ marginTop: 12, color: '#666', fontSize: 14 }}>Loading...</Text>
       </View>
     );
   }
 
-  /**
-   * 🚪 No session → auth flow
-   */
+  // No user → redirect to login
   if (!user) {
     return <Redirect href="/(auth)/login" />;
   }
 
-  /**
-   * 🧭 Role routing (single source of truth)
-   */
+  // Role-based routing
   switch (user.role) {
     case 'farmer':
       return <Redirect href="/(farmer)/dashboard" />;

@@ -63,6 +63,22 @@ const DISEASES: DiseaseInfo[] = [
     prevention: 'Vaccination, biosecurity, quarantine',
     species: ['Chickens', 'Poultry'],
   },
+  {
+    id: '4',
+    name: 'Brucellosis',
+    symptoms: ['Abortion in pregnant animals', 'Fever', 'Joint pain', 'Reduced milk production'],
+    treatment: 'Antibiotics, culling infected animals',
+    prevention: 'Vaccination, testing, biosecurity',
+    species: ['Cattle', 'Goats', 'Sheep', 'Pigs'],
+  },
+  {
+    id: '5',
+    name: 'East Coast Fever (ECF)',
+    symptoms: ['High fever', 'Swollen lymph nodes', 'Loss of appetite', 'Difficulty breathing'],
+    treatment: 'Antiprotozoal drugs, supportive care',
+    prevention: 'Tick control, vaccination',
+    species: ['Cattle'],
+  },
 ];
 
 const RESOURCES: VeterinaryResource[] = [
@@ -90,6 +106,22 @@ const RESOURCES: VeterinaryResource[] = [
     link: 'https://www.cdc.gov/onehealth/index.html',
     created_at: new Date().toISOString(),
   },
+  {
+    id: '4',
+    title: 'Rwanda Veterinary Council Guidelines',
+    description: 'Professional standards and guidelines for veterinarians in Rwanda',
+    category: 'Reference',
+    link: 'https://www.rvc.gov.rw',
+    created_at: new Date().toISOString(),
+  },
+  {
+    id: '5',
+    title: 'Animal Welfare Best Practices',
+    description: 'Guidelines for ensuring animal welfare in livestock management',
+    category: 'Guide',
+    link: 'https://www.oie.int/animal-welfare',
+    created_at: new Date().toISOString(),
+  },
 ];
 
 export default function VetExploreScreen() {
@@ -114,9 +146,11 @@ export default function VetExploreScreen() {
       setLoading(true);
       const response = await api.get('/vet/resources');
       const resourcesData = response.data.data || response.data;
-      setResources(resourcesData);
+      if (resourcesData && resourcesData.length > 0) {
+        setResources(resourcesData);
+      }
     } catch (error: any) {
-      console.log('Fetch resources error:', error?.response?.data);
+      console.log('Fetch resources error:', error?.response?.data || error.message);
       // Use mock data if API fails
       setResources(RESOURCES);
     } finally {
@@ -137,11 +171,15 @@ export default function VetExploreScreen() {
   };
 
   const handleOpenLink = async (url: string) => {
-    const canOpen = await Linking.canOpenURL(url);
-    if (canOpen) {
-      await Linking.openURL(url);
-    } else {
-      Alert.alert('Error', 'Cannot open this link');
+    try {
+      const canOpen = await Linking.canOpenURL(url);
+      if (canOpen) {
+        await Linking.openURL(url);
+      } else {
+        Alert.alert('Error', 'Cannot open this link');
+      }
+    } catch (error) {
+      Alert.alert('Error', 'Failed to open link');
     }
   };
 
@@ -152,6 +190,7 @@ export default function VetExploreScreen() {
       [
         { text: 'Veterinary Emergency: 112', onPress: () => Linking.openURL('tel:112') },
         { text: 'Animal Disease Hotline: 101', onPress: () => Linking.openURL('tel:101') },
+        { text: 'Rwanda Animal Health: 0788 123 456', onPress: () => Linking.openURL('tel:+250788123456') },
         { text: 'Cancel', style: 'cancel' },
       ]
     );
@@ -164,6 +203,7 @@ export default function VetExploreScreen() {
       [
         { text: 'Call: +250 788 123 456', onPress: () => Linking.openURL('tel:+250788123456') },
         { text: 'Email: support@vetconnect.rw', onPress: () => Linking.openURL('mailto:support@vetconnect.rw') },
+        { text: 'WhatsApp: +250 788 123 456', onPress: () => Linking.openURL('https://wa.me/250788123456') },
         { text: 'Cancel', style: 'cancel' },
       ]
     );
@@ -259,25 +299,31 @@ export default function VetExploreScreen() {
           Common livestock diseases and treatment guidelines
         </Text>
         
-        {filteredDiseases.map((disease) => (
-          <TouchableOpacity
-            key={disease.id}
-            style={styles.diseaseCard}
-            onPress={() => {
-              setSelectedDisease(disease);
-              setShowDiseaseModal(true);
-            }}
-            activeOpacity={0.7}
-          >
-            <View style={styles.diseaseHeader}>
-              <Text style={styles.diseaseName}>{disease.name}</Text>
-              <Ionicons name="chevron-forward" size={20} color="#ccc" />
-            </View>
-            <Text style={styles.diseaseSpecies}>
-              Affects: {disease.species.join(', ')}
-            </Text>
-          </TouchableOpacity>
-        ))}
+        {filteredDiseases.length === 0 ? (
+          <View style={styles.noResultsContainer}>
+            <Text style={styles.noResultsText}>No diseases found</Text>
+          </View>
+        ) : (
+          filteredDiseases.map((disease) => (
+            <TouchableOpacity
+              key={disease.id}
+              style={styles.diseaseCard}
+              onPress={() => {
+                setSelectedDisease(disease);
+                setShowDiseaseModal(true);
+              }}
+              activeOpacity={0.7}
+            >
+              <View style={styles.diseaseHeader}>
+                <Text style={styles.diseaseName}>{disease.name}</Text>
+                <Ionicons name="chevron-forward" size={20} color="#ccc" />
+              </View>
+              <Text style={styles.diseaseSpecies}>
+                Affects: {disease.species.join(', ')}
+              </Text>
+            </TouchableOpacity>
+          ))
+        )}
       </View>
 
       {/* Category Filters */}
@@ -572,6 +618,14 @@ const styles = StyleSheet.create({
   diseaseSpecies: {
     fontSize: 12,
     color: '#666',
+  },
+  noResultsContainer: {
+    padding: 20,
+    alignItems: 'center',
+  },
+  noResultsText: {
+    fontSize: 14,
+    color: '#999',
   },
   resourcesList: {
     marginHorizontal: 16,

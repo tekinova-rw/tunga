@@ -18,11 +18,11 @@ import { Ionicons } from '@expo/vector-icons';
 import { api } from '../../../api/axios';
 import { useAuthStore } from '../../../store/auth-store';
 
-type AnimalCategory = 'Cow' | 'Goat' | 'Sheep' | 'Pig' | 'Chicken' | 'Rabbit' | 'Other';
+type AnimalCategory = 'Cow' | 'Goat' | 'Sheep' | 'Pig' | 'Chicken' | 'Rabbit' | 'Horse' | 'Other';
 
-const CATEGORIES: AnimalCategory[] = ['Cow', 'Goat', 'Sheep', 'Pig', 'Chicken', 'Rabbit', 'Other'];
+const CATEGORIES: AnimalCategory[] = ['Cow', 'Goat', 'Sheep', 'Pig', 'Chicken', 'Rabbit', 'Horse', 'Other'];
 
-const HEALTH_STATUSES = ['Healthy', 'Sick', 'Recovering', 'Under Treatment', 'Pregnant'];
+const HEALTH_STATUSES = ['Healthy', 'Sick', 'Recovering', 'Under Treatment', 'Pregnant', 'Critical'];
 
 export default function AddAnimalScreen() {
   const [name, setName] = useState('');
@@ -85,7 +85,7 @@ export default function AddAnimalScreen() {
       
       console.log('Saving animal:', payload);
       
-      const response = await api.post('/farmer/animals', payload);
+      const response = await api.post('/animals', payload);
       
       console.log('Save response:', response.data);
       
@@ -95,7 +95,10 @@ export default function AddAnimalScreen() {
         [
           {
             text: 'View Animals',
-            onPress: () => router.replace('/(farmer)/animals/animals'),
+            onPress: () => {
+              // ✅ FIX: Use router.back() or navigate to the animals index
+              router.back();
+            },
           },
           {
             text: 'Add Another',
@@ -129,6 +132,10 @@ export default function AddAnimalScreen() {
     } finally {
       setLoading(false);
     }
+  };
+
+  const goBack = () => {
+    router.back();
   };
 
   return (
@@ -285,7 +292,7 @@ export default function AddAnimalScreen() {
         <View style={styles.buttonContainer}>
           <TouchableOpacity
             style={styles.cancelButton}
-            onPress={() => router.back()}
+            onPress={goBack}
             disabled={loading}
           >
             <Text style={styles.cancelButtonText}>Cancel</Text>

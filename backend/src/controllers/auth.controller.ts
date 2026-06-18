@@ -1,8 +1,8 @@
 // backend/src/controllers/auth.controller.ts
-import { Request, Response } from 'express';
 import bcrypt from 'bcryptjs';
-import jwt from 'jsonwebtoken';
 import crypto from 'crypto';
+import { Request, Response } from 'express';
+import jwt from 'jsonwebtoken';
 
 import { db } from '../config/db';
 import { AuthRequest } from '../middleware/auth.middleware';
@@ -10,7 +10,7 @@ import { AuthRequest } from '../middleware/auth.middleware';
 const ACCESS_SECRET = process.env.JWT_ACCESS_SECRET || 'access_secret';
 const REFRESH_SECRET = process.env.JWT_REFRESH_SECRET || 'refresh_secret';
 
-// ✅ Define a type for user rows with proper status union type
+// ✅ Define a type for user rows
 type UserRow = {
   id: number;
   full_name: string;
@@ -19,7 +19,7 @@ type UserRow = {
   password: string;
   role: string;
   district_id: number;
-  status: string; // Using string to avoid type conflicts
+  status: string;
   is_verified: number;
   is_active: number;
   is_deleted: number;
@@ -31,36 +31,61 @@ type UserRow = {
 
 /**
  * =========================
- * REGISTER
+ * REGISTER - All users go to users table (NO SEPARATE PROFILE TABLE)
  * =========================
  */
 export const register = async (req: Request, res: Response): Promise<void> => {
   try {
-    const { full_name, phone, email, password, district_id, role } = req.body;
+    const { 
+      full_name, 
+      phone, 
+      email, 
+      password, 
+      district_id, 
+      role,
+    } = req.body;
 
-    console.log('📝 Register request:', { full_name, phone, email, district_id, role });
+    console.log('📝 Register request:', { 
+      full_name, 
+      phone, 
+      email, 
+      district_id, 
+      role,
+    });
 
+    // ✅ Validation
     if (!full_name || !phone || !email || !password || !district_id) {
-      res.status(400).json({ message: 'Missing fields' });
+      res.status(400).json({ 
+        success: false,
+        message: 'Missing fields' 
+      });
       return;
     }
 
+    // ✅ Check if user exists
     const existing = await db.query(
       `SELECT id FROM users WHERE email = ? OR phone = ?`,
       [email, phone]
     ) as any[];
 
     if (existing && Array.isArray(existing) && existing.length > 0) {
-      res.status(409).json({ message: 'User already exists' });
+      res.status(409).json({ 
+        success: false,
+        message: 'User already exists' 
+      });
       return;
     }
 
     const hashedPassword = await bcrypt.hash(password, 10);
-
     const verificationToken = crypto.randomBytes(32).toString('hex');
     const expires = new Date(Date.now() + 24 * 60 * 60 * 1000);
 
-    await db.query(
+    const isVeterinarian = role === 'veterinarian';
+    const userStatus = isVeterinarian ? 'pending' : 'active';
+    const userVerified = isVeterinarian ? 0 : 1;
+
+    // ✅ Insert user into users table (ALL users go here)
+    const [result]: any = await db.query(
       `INSERT INTO users (
         full_name,
         phone,
@@ -71,8 +96,12 @@ export const register = async (req: Request, res: Response): Promise<void> => {
         status,
         is_verified,
         verification_token,
-        token_expires
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        token_expires,
+        is_active,
+        is_deleted,
+        created_at,
+        updated_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW(), NOW())`,
       [
         full_name,
         phone,
@@ -80,21 +109,31 @@ export const register = async (req: Request, res: Response): Promise<void> => {
         hashedPassword,
         role || 'farmer',
         district_id,
-        role === 'veterinarian' ? 'pending' : 'active',
-        role === 'veterinarian' ? 0 : 1,
+        userStatus,
+        userVerified,
         verificationToken,
         expires,
+        1, // is_active
+        0, // is_deleted
       ]
     );
 
-    console.log('✅ User registered successfully:', email);
+    const userId = result.insertId;
+    console.log('✅ User registered successfully:', email, 'with ID:', userId);
 
+    // ✅ Return response - NO VETERINARIAN PROFILE CREATION
     res.status(201).json({
       success: true,
-      message: role === 'veterinarian' 
-        ? 'Account created. Check email for verification.' 
+      message: isVeterinarian 
+        ? 'Account created. Waiting for admin approval.' 
         : 'Account created successfully! You can now login.',
+      data: {
+        id: userId,
+        role: role || 'farmer',
+        requiresApproval: isVeterinarian,
+      }
     });
+
   } catch (error) {
     console.error('❌ Register error:', error);
     res.status(500).json({ 
@@ -198,7 +237,7 @@ export const login = async (req: Request, res: Response): Promise<void> => {
       return;
     }
 
-    // ✅ FIXED: Check if account is active or approved
+    // Check if account is active or approved
     const isActiveOrApproved = user.status === 'active' || user.status === 'approved';
     if (!isActiveOrApproved) {
       console.log('❌ Account not active/approved:', user.status);
@@ -225,7 +264,7 @@ export const login = async (req: Request, res: Response): Promise<void> => {
       return;
     }
 
-    // ✅ FIXED: Check if veterinarian is pending approval (using separate checks)
+    // Check if veterinarian is pending approval
     if (user.role === 'veterinarian') {
       if (user.status === 'pending') {
         console.log('❌ Veterinarian pending approval:', user.id);

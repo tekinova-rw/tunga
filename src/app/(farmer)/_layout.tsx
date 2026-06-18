@@ -8,7 +8,6 @@ import { ActivityIndicator, View } from 'react-native';
 export default function FarmerLayout() {
   const { user, token, hydrated, isLoading } = useAuthStore();
 
-  // Show loading while hydrating
   if (!hydrated || isLoading) {
     return (
       <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: '#f5f5f5' }}>
@@ -17,14 +16,11 @@ export default function FarmerLayout() {
     );
   }
 
-  // Redirect if not authenticated or not a farmer
   if (!user || !token) {
     return <Redirect href="/(auth)/login" />;
   }
 
-  // Redirect if user is not a farmer
   if (user.role !== 'farmer') {
-    // Redirect to appropriate dashboard based on role
     if (user.role === 'veterinarian') {
       return <Redirect href="/(vet)/dashboard" />;
     }
@@ -46,8 +42,7 @@ export default function FarmerLayout() {
           headerTitleStyle: {
             fontWeight: 'bold',
           },
-          headerBackTitle: 'Back',
-          // ✅ REMOVED: headerBackTitleVisible is not valid in Expo Router
+          headerBackTitle: '',
         }}
       >
         <Stack.Screen
@@ -61,62 +56,55 @@ export default function FarmerLayout() {
           name="profile"
           options={{
             title: 'Profile',
-            headerShown: true,
-          }}
-        />
-        <Stack.Screen
-          name="animals"
-          options={{
-            title: 'My Animals',
-            headerShown: true,
-          }}
-        />
-        <Stack.Screen
-          name="animals/add"
-          options={{
-            title: 'Add Animal',
-            headerShown: true,
-          }}
-        />
-        <Stack.Screen
-          name="animals/[id]"
-          options={{
-            title: 'Animal Details',
-            headerShown: true,
-          }}
-        />
-        <Stack.Screen
-          name="requests"
-          options={{
-            title: 'Veterinary Requests',
-            headerShown: true,
-          }}
-        />
-        <Stack.Screen
-          name="appointments"
-          options={{
-            title: 'Appointments',
-            headerShown: true,
-          }}
-        />
-        <Stack.Screen
-          name="messages"
-          options={{
-            title: 'Messages',
-            headerShown: true,
-          }}
-        />
-        <Stack.Screen
-          name="change-password"
-          options={{
-            title: 'Change Password',
-            headerShown: true,
           }}
         />
         <Stack.Screen
           name="explore"
           options={{
             title: 'Explore',
+          }}
+        />
+        <Stack.Screen
+          name="messages"
+          options={{
+            title: 'Messages',
+          }}
+        />
+        <Stack.Screen
+          name="requests"
+          options={{
+            title: 'Requests',
+          }}
+        />
+        <Stack.Screen
+          name="animals"
+          options={{
+            title: 'My Animals',
+          }}
+        />
+        <Stack.Screen
+          name="animals/add"
+          options={{
+            title: 'Add Animal',
+          }}
+        />
+        <Stack.Screen
+          name="animals/[id]"
+          options={{
+            title: 'Animal Details',
+          }}
+        />
+        <Stack.Screen
+          name="appointments"
+          options={{
+            title: 'Appointments',
+          }}
+        />
+        {/* ✅ ADD THIS - Change Password Screen */}
+        <Stack.Screen
+          name="change-password"
+          options={{
+            title: 'Change Password',
             headerShown: true,
           }}
         />
