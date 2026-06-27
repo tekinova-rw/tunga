@@ -1,14 +1,26 @@
-// src/app/(auth)/_layout.tsx
+// ============================================================
+// FILE: src/app/(auth)/_layout.tsx
+// DESCRIPTION: Auth routes layout (login, register, etc.)
+// ============================================================
+
 import { Stack } from 'expo-router';
-import { useAuthStore } from '@/store/auth-store';
+import { useAuth } from '@/context/AuthContext';
 import { Redirect } from 'expo-router';
 import { View, ActivityIndicator } from 'react-native';
+import { useEffect } from 'react';
 
 export default function AuthLayout() {
-  const { user, token, hydrated, isLoading } = useAuthStore();
+  const { user, token, isLoading, isAuthenticated, hydrate } = useAuth();
 
-  // Show loading while hydrating
-  if (!hydrated || isLoading) {
+  // ✅ Ensure hydration happens
+  useEffect(() => {
+    if (!isLoading && !isAuthenticated) {
+      console.log('🔍 AuthLayout: Checking auth state...');
+    }
+  }, [isLoading, isAuthenticated]);
+
+  // Show loading while checking auth
+  if (isLoading) {
     return (
       <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: '#f5f5f5' }}>
         <ActivityIndicator size="large" color="#2E7D32" />
@@ -16,8 +28,9 @@ export default function AuthLayout() {
     );
   }
 
-  // If user is already logged in, redirect to appropriate dashboard
-  if (user && token) {
+  // ✅ If user is already logged in, redirect to appropriate dashboard
+  if (isAuthenticated && user && token) {
+    console.log('✅ User already authenticated, redirecting to dashboard');
     if (user.role === 'farmer') {
       return <Redirect href="/(farmer)/dashboard" />;
     }
@@ -27,8 +40,11 @@ export default function AuthLayout() {
     if (user.role === 'super_admin' || user.role === 'district_admin') {
       return <Redirect href="/(admin)/dashboard" />;
     }
+    // Fallback redirect
+    return <Redirect href="/(auth)/login" />;
   }
 
+  // ✅ Show auth screens
   return (
     <Stack
       screenOptions={{
@@ -39,20 +55,6 @@ export default function AuthLayout() {
         },
       }}
     >
-      <Stack.Screen 
-        name="onboarding" 
-        options={{
-          headerShown: false,
-          gestureEnabled: false,
-        }}
-      />
-      <Stack.Screen 
-        name="role-selection" 
-        options={{
-          headerShown: false,
-          gestureEnabled: true,
-        }}
-      />
       <Stack.Screen 
         name="login" 
         options={{

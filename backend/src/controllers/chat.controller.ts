@@ -1,3 +1,8 @@
+// ============================================================
+// FILE: backend/src/controllers/chat.controller.ts
+// DESCRIPTION: Chat controller for messaging between users
+// ============================================================
+
 import { Request, Response } from 'express';
 import mysql from 'mysql2/promise';
 import { RowDataPacket, ResultSetHeader } from 'mysql2';
@@ -18,25 +23,59 @@ interface Message extends RowDataPacket {
   conversation_id: number;
   sender_id: number;
   message: string;
+  image_url: string | null;
   is_read: number;
+  read_at: Date | null;
   created_at: Date;
-  status: 'sent' | 'delivered' | 'read';
-  seen_at: Date | null;
 }
 
-// Get messages for a conversation
-export const getMessages = async (req: Request, res: Response) => {
+interface Conversation extends RowDataPacket {
+  id: number;
+  farmer_id: number;
+  veterinarian_id: number;
+  last_message: string | null;
+  last_message_at: Date | null;
+  created_at: Date;
+  updated_at: Date;
+}
+
+/**
+ * =========================
+ * GET MESSAGES FOR A CONVERSATION
+ * =========================
+ * GET /api/chat/conversations/:conversationId/messages
+ */
+export const getMessages = async (req: Request, res: Response): Promise<void> => {
   try {
     const { conversationId } = req.params;
-    const userId = (req as any).user?.id;
+    const user = (req as any).user;
+    const userId = user?.id;
     
     console.log(`📥 Getting messages for conversation: ${conversationId}`);
     
+    if (!userId) {
+      res.status(401).json({ error: 'User not authenticated' });
+      return;
+    }
+    
+    // Check if user has access to this conversation
+    const [convCheck] = await pool.query<RowDataPacket[]>(
+      `SELECT id FROM conversations 
+       WHERE id = ? AND (farmer_id = ? OR veterinarian_id = ?)`,
+      [conversationId, userId, userId]
+    );
+    
+    if (convCheck.length === 0) {
+      res.status(403).json({ error: 'You do not have access to this conversation' });
+      return;
+    }
+    
     // Get all messages for this conversation
-    const [messages] = await pool.execute<Message[]>(
-      `SELECT m.*, 
-              u.name as sender_name,
-              m.status
+    const [messages] = await pool.query<Message[]>(
+      `SELECT 
+        m.*,
+        u.full_name as sender_name,
+        u.role as sender_role
        FROM messages m
        LEFT JOIN users u ON m.sender_id = u.id
        WHERE m.conversation_id = ?
@@ -45,160 +84,390 @@ export const getMessages = async (req: Request, res: Response) => {
     );
     
     // Mark unread messages as read (where current user is not the sender)
-    await pool.execute(
+    await pool.query(
       `UPDATE messages 
-       SET status = 'read', is_read = 1, seen_at = NOW()
+       SET is_read = 1, read_at = NOW()
        WHERE conversation_id = ? AND sender_id != ? AND is_read = 0`,
       [conversationId, userId]
     );
     
-    res.json(messages);
+    res.json({
+      success: true,
+      data: messages
+    });
   } catch (error) {
     console.error('Get messages error:', error);
     res.status(500).json({ error: 'Failed to get messages' });
   }
 };
 
-// Send a new message
-export const sendMessage = async (req: Request, res: Response) => {
+/**
+ * =========================
+ * SEND A NEW MESSAGE
+ * =========================
+ * POST /api/chat/messages
+ */
+export const sendMessage = async (req: Request, res: Response): Promise<void> => {
   try {
-    const { conversation_id, message, receiver_id } = req.body;
-    const sender_id = (req as any).user?.id;
+    const { conversation_id, message, image_url } = req.body;
+    const user = (req as any).user;
+    const sender_id = user?.id;
     
-    console.log('📤 Sending message:', { conversation_id, sender_id, receiver_id, message });
+    console.log('📤 Sending message:', { conversation_id, sender_id, message, image_url });
+    
+    if (!message && !image_url) {
+      res.status(400).json({ error: 'Message or image is required' });
+      return;
+    }
+    
+    if (!sender_id) {
+      res.status(401).json({ error: 'User not authenticated' });
+      return;
+    }
+    
+    // Check if user has access to this conversation
+    const [convCheck] = await pool.query<RowDataPacket[]>(
+      `SELECT id FROM conversations 
+       WHERE id = ? AND (farmer_id = ? OR veterinarian_id = ?)`,
+      [conversation_id, sender_id, sender_id]
+    );
+    
+    if (convCheck.length === 0) {
+      res.status(403).json({ error: 'You do not have access to this conversation' });
+      return;
+    }
     
     // Insert message into database
-    const [result] = await pool.execute<ResultSetHeader>(
-      `INSERT INTO messages (conversation_id, sender_id, message, status, created_at)
-       VALUES (?, ?, ?, 'sent', NOW())`,
-      [conversation_id, sender_id, message]
+    const [result] = await pool.query<ResultSetHeader>(
+      `INSERT INTO messages (conversation_id, sender_id, message, image_url, is_read, created_at)
+       VALUES (?, ?, ?, ?, 0, NOW())`,
+      [conversation_id, sender_id, message || null, image_url || null]
+    );
+    
+    // Update conversation's last message
+    await pool.query(
+      `UPDATE conversations 
+       SET last_message = ?, last_message_at = NOW(), updated_at = NOW() 
+       WHERE id = ?`,
+      [message || '📷 Image', conversation_id]
     );
     
     // Get the inserted message with full details
-    const [newMessage] = await pool.execute<Message[]>(
-      `SELECT m.*, u.name as sender_name
+    const [newMessage] = await pool.query<Message[]>(
+      `SELECT 
+        m.*,
+        u.full_name as sender_name,
+        u.role as sender_role
        FROM messages m
        LEFT JOIN users u ON m.sender_id = u.id
        WHERE m.id = ?`,
       [result.insertId]
     );
     
-    res.status(201).json(newMessage[0]);
+    res.status(201).json({
+      success: true,
+      message: 'Message sent successfully',
+      data: newMessage[0]
+    });
   } catch (error) {
     console.error('Send message error:', error);
     res.status(500).json({ error: 'Failed to send message' });
   }
 };
 
-// Get all conversations for a user
-export const getConversations = async (req: Request, res: Response) => {
+/**
+ * =========================
+ * GET ALL CONVERSATIONS FOR A USER
+ * =========================
+ * GET /api/chat/conversations
+ */
+export const getConversations = async (req: Request, res: Response): Promise<void> => {
   try {
-    const userId = (req as any).user?.id;
+    const user = (req as any).user;
+    const userId = user?.id;
     
     console.log(`📋 Getting conversations for user: ${userId}`);
     
-    const [conversations] = await pool.execute(
-      `SELECT DISTINCT 
-          c.*,
-          CASE 
-            WHEN c.farmer_id = ? THEN c.veterinarian_id
-            ELSE c.farmer_id
-          END as other_user_id,
-          (SELECT u.name FROM users u WHERE u.id = 
-            CASE 
-              WHEN c.farmer_id = ? THEN c.veterinarian_id
-              ELSE c.farmer_id
-            END
-          ) as other_user_name,
-          (SELECT u.role FROM users u WHERE u.id = 
-            CASE 
-              WHEN c.farmer_id = ? THEN c.veterinarian_id
-              ELSE c.farmer_id
-            END
-          ) as other_user_role,
-          (SELECT message FROM messages 
-           WHERE conversation_id = c.id 
-           ORDER BY created_at DESC LIMIT 1) as last_message,
-          (SELECT created_at FROM messages 
-           WHERE conversation_id = c.id 
-           ORDER BY created_at DESC LIMIT 1) as last_message_time,
-          (SELECT COUNT(*) FROM messages 
-           WHERE conversation_id = c.id AND sender_id != ? AND is_read = 0) as unread_count
+    if (!userId) {
+      res.status(401).json({ error: 'User not authenticated' });
+      return;
+    }
+    
+    const [conversations] = await pool.query<Conversation[]>(
+      `SELECT 
+        c.*,
+        CASE 
+          WHEN c.farmer_id = ? THEN c.veterinarian_id
+          ELSE c.farmer_id
+        END as other_user_id,
+        CASE 
+          WHEN c.farmer_id = ? THEN 
+            (SELECT full_name FROM users WHERE id = c.veterinarian_id)
+          ELSE 
+            (SELECT full_name FROM users WHERE id = c.farmer_id)
+        END as other_user_name,
+        CASE 
+          WHEN c.farmer_id = ? THEN 
+            (SELECT role FROM users WHERE id = c.veterinarian_id)
+          ELSE 
+            (SELECT role FROM users WHERE id = c.farmer_id)
+        END as other_user_role,
+        (SELECT COUNT(*) FROM messages 
+         WHERE conversation_id = c.id AND sender_id != ? AND is_read = 0) as unread_count
        FROM conversations c
-       INNER JOIN participants p ON c.id = p.conversation_id
-       WHERE p.user_id = ?
-       ORDER BY last_message_time DESC`,
-      [userId, userId, userId, userId, userId]
+       WHERE c.farmer_id = ? OR c.veterinarian_id = ?
+       ORDER BY c.last_message_at DESC`,
+      [userId, userId, userId, userId, userId, userId]
     );
     
-    res.json(conversations);
+    res.json({
+      success: true,
+      data: conversations
+    });
   } catch (error) {
     console.error('Get conversations error:', error);
     res.status(500).json({ error: 'Failed to get conversations' });
   }
 };
 
-// Create a new conversation
-export const createConversation = async (req: Request, res: Response) => {
+/**
+ * =========================
+ * CREATE A NEW CONVERSATION
+ * =========================
+ * POST /api/chat/conversations
+ */
+export const createConversation = async (req: Request, res: Response): Promise<void> => {
   try {
     const { farmerId, veterinarianId } = req.body;
-    const userId = (req as any).user?.id;
+    const user = (req as any).user;
     
     console.log(`🆕 Creating conversation between farmer ${farmerId} and vet ${veterinarianId}`);
     
-    // Check if conversation already exists
-    const [existing] = await pool.execute(
-      `SELECT c.id 
-       FROM conversations c
-       INNER JOIN participants p1 ON c.id = p1.conversation_id AND p1.user_id = ?
-       INNER JOIN participants p2 ON c.id = p2.conversation_id AND p2.user_id = ?`,
-      [farmerId, veterinarianId]
+    if (!user) {
+      res.status(401).json({ error: 'User not authenticated' });
+      return;
+    }
+    
+    if (!farmerId || !veterinarianId) {
+      res.status(400).json({ error: 'Farmer ID and Veterinarian ID are required' });
+      return;
+    }
+    
+    const [existing] = await pool.query<RowDataPacket[]>(
+      `SELECT id FROM conversations 
+       WHERE (farmer_id = ? AND veterinarian_id = ?) 
+       OR (farmer_id = ? AND veterinarian_id = ?)`,
+      [farmerId, veterinarianId, veterinarianId, farmerId]
     );
     
-    if ((existing as any[]).length > 0) {
-      console.log('Conversation already exists:', (existing as any[])[0].id);
-      return res.json({ conversation_id: (existing as any[])[0].id });
+    if (existing.length > 0) {
+      console.log('Conversation already exists:', existing[0].id);
+      res.json({ 
+        success: true,
+        conversation_id: existing[0].id,
+        message: 'Conversation already exists'
+      });
+      return;
     }
     
     // Create new conversation
-    const [result] = await pool.execute<ResultSetHeader>(
-      `INSERT INTO conversations (farmer_id, veterinarian_id, created_at)
-       VALUES (?, ?, NOW())`,
+    const [result] = await pool.query<ResultSetHeader>(
+      `INSERT INTO conversations (farmer_id, veterinarian_id, created_at, updated_at)
+       VALUES (?, ?, NOW(), NOW())`,
       [farmerId, veterinarianId]
     );
     
     const conversationId = result.insertId;
     
-    // Add participants
-    await pool.execute(
-      `INSERT INTO participants (conversation_id, user_id) VALUES (?, ?), (?, ?)`,
-      [conversationId, farmerId, conversationId, veterinarianId]
-    );
-    
     console.log('New conversation created:', conversationId);
-    res.status(201).json({ conversation_id: conversationId });
+    res.status(201).json({ 
+      success: true,
+      conversation_id: conversationId,
+      message: 'Conversation created successfully'
+    });
   } catch (error) {
     console.error('Create conversation error:', error);
     res.status(500).json({ error: 'Failed to create conversation' });
   }
 };
 
-// Mark message as read
-export const markAsRead = async (req: Request, res: Response) => {
+/**
+ * =========================
+ * MARK ALL MESSAGES AS READ
+ * =========================
+ * PATCH /api/chat/conversations/:conversationId/read-all
+ */
+export const markAllAsRead = async (req: Request, res: Response): Promise<void> => {
+  try {
+    const { conversationId } = req.params;
+    const user = (req as any).user;
+    const userId = user?.id;
+    
+    if (!userId) {
+      res.status(401).json({ error: 'User not authenticated' });
+      return;
+    }
+    
+    // Check if user has access to this conversation
+    const [convCheck] = await pool.query<RowDataPacket[]>(
+      `SELECT id FROM conversations 
+       WHERE id = ? AND (farmer_id = ? OR veterinarian_id = ?)`,
+      [conversationId, userId, userId]
+    );
+    
+    if (convCheck.length === 0) {
+      res.status(403).json({ error: 'You do not have access to this conversation' });
+      return;
+    }
+    
+    await pool.query(
+      `UPDATE messages 
+       SET is_read = 1, read_at = NOW()
+       WHERE conversation_id = ? AND sender_id != ? AND is_read = 0`,
+      [conversationId, userId]
+    );
+    
+    res.json({ 
+      success: true, 
+      message: 'All messages marked as read' 
+    });
+  } catch (error) {
+    console.error('Mark all as read error:', error);
+    res.status(500).json({ error: 'Failed to mark messages as read' });
+  }
+};
+
+/**
+ * =========================
+ * GET UNREAD COUNT
+ * =========================
+ * GET /api/chat/unread-count
+ */
+export const getUnreadCount = async (req: Request, res: Response): Promise<void> => {
+  try {
+    const user = (req as any).user;
+    const userId = user?.id;
+    
+    if (!userId) {
+      res.status(401).json({ error: 'User not authenticated' });
+      return;
+    }
+    
+    const [result] = await pool.query<RowDataPacket[]>(
+      `SELECT COUNT(*) as unread_count
+       FROM messages m
+       JOIN conversations c ON m.conversation_id = c.id
+       WHERE (c.farmer_id = ? OR c.veterinarian_id = ?) 
+       AND m.sender_id != ? 
+       AND m.is_read = 0`,
+      [userId, userId, userId]
+    );
+    
+    res.json({ 
+      success: true,
+      unread_count: result[0]?.unread_count || 0 
+    });
+  } catch (error) {
+    console.error('Get unread count error:', error);
+    res.status(500).json({ error: 'Failed to get unread count' });
+  }
+};
+
+/**
+ * =========================
+ * DELETE MESSAGE
+ * =========================
+ * DELETE /api/chat/messages/:messageId
+ */
+export const deleteMessage = async (req: Request, res: Response): Promise<void> => {
   try {
     const { messageId } = req.params;
-    const userId = (req as any).user?.id;
+    const user = (req as any).user;
+    const userId = user?.id;
     
-    await pool.execute(
-      `UPDATE messages 
-       SET status = 'read', is_read = 1, seen_at = NOW()
-       WHERE id = ? AND sender_id != ?`,
+    if (!userId) {
+      res.status(401).json({ error: 'User not authenticated' });
+      return;
+    }
+    
+    // Check if user is the sender
+    const [message] = await pool.query<RowDataPacket[]>(
+      `SELECT sender_id FROM messages WHERE id = ?`,
+      [messageId]
+    );
+    
+    if (message.length === 0) {
+      res.status(404).json({ error: 'Message not found' });
+      return;
+    }
+    
+    if (message[0].sender_id !== userId) {
+      res.status(403).json({ error: 'You can only delete your own messages' });
+      return;
+    }
+    
+    await pool.query(
+      `DELETE FROM messages WHERE id = ? AND sender_id = ?`,
       [messageId, userId]
     );
     
-    res.json({ success: true });
+    res.json({ 
+      success: true, 
+      message: 'Message deleted successfully' 
+    });
   } catch (error) {
-    console.error('Mark as read error:', error);
-    res.status(500).json({ error: 'Failed to mark as read' });
+    console.error('Delete message error:', error);
+    res.status(500).json({ error: 'Failed to delete message' });
   }
+};
+
+/**
+ * =========================
+ * GET CONVERSATION BY USERS
+ * =========================
+ * GET /api/chat/conversations/by-users
+ */
+export const getConversationByUsers = async (req: Request, res: Response): Promise<void> => {
+  try {
+    const { farmerId, veterinarianId } = req.query;
+    const user = (req as any).user;
+    
+    if (!user) {
+      res.status(401).json({ error: 'User not authenticated' });
+      return;
+    }
+    
+    if (!farmerId || !veterinarianId) {
+      res.status(400).json({ error: 'Farmer ID and Veterinarian ID are required' });
+      return;
+    }
+    
+    // ✅ FIX: Use pool.query instead of pool.execute
+    const [rows] = await pool.query<RowDataPacket[]>(
+      `SELECT id FROM conversations 
+       WHERE (farmer_id = ? AND veterinarian_id = ?) 
+       OR (farmer_id = ? AND veterinarian_id = ?)`,
+      [farmerId, veterinarianId, veterinarianId, farmerId]
+    );
+    
+    res.json({ 
+      success: true,
+      conversation_id: rows[0]?.id || null 
+    });
+  } catch (error) {
+    console.error('Get conversation by users error:', error);
+    res.status(500).json({ error: 'Failed to get conversation' });
+  }
+};
+
+// Export all functions
+export default {
+  getMessages,
+  sendMessage,
+  getConversations,
+  createConversation,
+  markAllAsRead,
+  getUnreadCount,
+  deleteMessage,
+  getConversationByUsers
 };

@@ -1,6 +1,6 @@
 // src/store/auth-store.ts
-import { create } from 'zustand';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import { create } from 'zustand';
 
 export interface User {
   id: number;
@@ -23,7 +23,6 @@ interface AuthState {
   hydrated: boolean;
   isLoading: boolean;
 
-  // Actions
   login: (user: User, token: string, refreshToken?: string) => Promise<void>;
   setAuth: (user: User, token: string, refreshToken?: string) => void;
   setUser: (user: User) => void;
@@ -32,7 +31,7 @@ interface AuthState {
   clearSession: () => Promise<void>;
   logout: () => Promise<void>;
   hydrate: () => Promise<void>;
-  validateSession: () => Promise<boolean>; // ✅ ADD THIS
+  validateSession: () => Promise<boolean>;
   reset: () => void;
 }
 
@@ -49,9 +48,9 @@ export const useAuthStore = create<AuthState>((set, get) => ({
   hydrated: false,
   isLoading: false,
 
-  /**
-   * 🔐 LOGIN (with AsyncStorage)
-   */
+  // ======================
+  // LOGIN - FIXED ✅
+  // ======================
   login: async (user, token, refreshToken) => {
     try {
       await AsyncStorage.multiSet([
@@ -60,59 +59,63 @@ export const useAuthStore = create<AuthState>((set, get) => ({
         [STORAGE_KEYS.REFRESH_TOKEN, refreshToken || ''],
       ]);
 
-      set({ 
-        user, 
-        token, 
+      set({
+        user,
+        token,
         refreshToken: refreshToken || null,
-        isLoading: false 
+        isLoading: false,
+        hydrated: true, // ✅ CRITICAL FIX: Set hydrated to true
       });
+
+      console.log('✅ Login successful, store updated with hydrated: true');
     } catch (error) {
       console.error('Login storage error:', error);
       throw error;
     }
   },
 
-  /**
-   * ⚡ SIMPLE SET AUTH (NO AsyncStorage)
-   * used after API login if you don't want async storage again
-   */
+  // ======================
+  // SET AUTH - FIXED ✅
+  // ======================
   setAuth: (user, token, refreshToken) => {
-    set({ 
-      user, 
-      token, 
+    set({
+      user,
+      token,
       refreshToken: refreshToken || null,
-      isLoading: false 
+      isLoading: false,
+      hydrated: true, // ✅ CRITICAL FIX: Set hydrated to true
     });
+    
+    console.log('✅ setAuth called, hydrated: true');
   },
 
-  /**
-   * 👤 UPDATE USER
-   */
+  // ======================
+  // UPDATE USER
+  // ======================
   setUser: (user) => {
     set({ user });
-    // Update stored user
     AsyncStorage.setItem(STORAGE_KEYS.USER, JSON.stringify(user)).catch(console.error);
   },
 
-  /**
-   * 🎫 UPDATE TOKEN
-   */
+  // ======================
+  // UPDATE TOKEN
+  // ======================
   setToken: (token) => {
     set({ token });
     AsyncStorage.setItem(STORAGE_KEYS.TOKEN, token).catch(console.error);
   },
 
-  /**
-   * 🔄 UPDATE REFRESH TOKEN
-   */
+  // ======================
+  // UPDATE REFRESH TOKEN
+  // ======================
   setRefreshToken: (refreshToken) => {
     set({ refreshToken });
     AsyncStorage.setItem(STORAGE_KEYS.REFRESH_TOKEN, refreshToken).catch(console.error);
   },
 
-  /**
-   * 🚪 CLEAR SESSION (local only, no API call)
-   */
+  // ======================
+  // CLEAR SESSION
+  // ======================
   clearSession: async () => {
     try {
       await AsyncStorage.multiRemove([
@@ -120,48 +123,42 @@ export const useAuthStore = create<AuthState>((set, get) => ({
         STORAGE_KEYS.TOKEN,
         STORAGE_KEYS.REFRESH_TOKEN,
       ]);
-      set({ 
-        user: null, 
-        token: null, 
+
+      set({
+        user: null,
+        token: null,
         refreshToken: null,
-        isLoading: false 
+        isLoading: false,
+        hydrated: true, // Keep hydrated true after clearing
       });
+      
+      console.log('✅ Session cleared');
     } catch (error) {
       console.error('Clear session error:', error);
     }
   },
 
-  /**
-   * 🚪 LOGOUT (with API call if token exists)
-   */
+  // ======================
+  // LOGOUT
+  // ======================
   logout: async () => {
     const { token, clearSession } = get();
-    
-    // Try to call logout API if token exists
+
     if (token) {
       try {
-        // Import api dynamically to avoid circular dependency
         const { api } = await import('../api/axios');
         await api.post('/auth/logout', { refreshToken: token });
-        console.log('✅ Logout API called successfully');
-      } catch (error: any) {
-        // If 401, token is already invalid
-        if (error?.response?.status === 401) {
-          console.log('Token already invalid, skipping API logout');
-        } else {
-          console.error('Logout API error:', error?.response?.data || error.message);
-        }
+      } catch (error) {
+        console.log('Logout API error ignored');
       }
     }
 
-    // Clear local storage and state
     await clearSession();
-    console.log('✅ User logged out successfully');
   },
 
-  /**
-   * 🔄 HYDRATE (restore session from storage)
-   */
+  // ======================
+  // HYDRATE
+  // ======================
   hydrate: async () => {
     try {
       const [userStr, token, refreshToken] = await AsyncStorage.multiGet([
@@ -171,35 +168,25 @@ export const useAuthStore = create<AuthState>((set, get) => ({
       ]);
 
       const user = userStr[1] ? JSON.parse(userStr[1]) : null;
-      const authToken = token[1] || null;
-      const refreshTokenStr = refreshToken[1] || null;
 
       set({
         user,
-        token: authToken,
-        refreshToken: refreshTokenStr,
+        token: token[1] || null,
+        refreshToken: refreshToken[1] || null,
         hydrated: true,
         isLoading: false,
       });
 
-      console.log('✅ Auth hydrated:', { 
-        hasUser: !!user, 
-        hasToken: !!authToken,
-        hasRefreshToken: !!refreshTokenStr 
+      console.log('✅ Auth hydrated:', {
+        hasUser: !!user,
+        hasToken: !!token[1],
+        role: user?.role,
       });
-
-      // ✅ Fixed: Validate session with backend
-      // Use setTimeout to avoid calling validateSession during hydration
-      if (user && authToken) {
-        setTimeout(() => {
-          get().validateSession();
-        }, 100);
-      }
-
     } catch (error) {
       console.error('Hydrate error:', error);
-      set({ 
-        hydrated: true, 
+
+      set({
+        hydrated: true,
         isLoading: false,
         user: null,
         token: null,
@@ -208,56 +195,31 @@ export const useAuthStore = create<AuthState>((set, get) => ({
     }
   },
 
-  /**
-   * 🔍 VALIDATE SESSION with backend
-   * Checks if token is still valid and user exists
-   */
+  // ======================
+  // VALIDATE SESSION
+  // ======================
   validateSession: async () => {
     const { token, user, clearSession } = get();
-    
-    if (!token || !user) {
-      return false;
-    }
+
+    if (!token || !user) return false;
 
     try {
       const { api } = await import('../api/axios');
-      
-      // Try to get user profile to validate token
-      const response = await api.get('/auth/profile');
-      const userData = response.data.data || response.data;
-      
-      // Update user data if changed
-      if (JSON.stringify(userData) !== JSON.stringify(user)) {
-        set({ user: userData });
-        await AsyncStorage.setItem(STORAGE_KEYS.USER, JSON.stringify(userData));
-      }
-      
-      console.log('✅ Session validated successfully');
+      await api.get('/auth/profile');
       return true;
-      
     } catch (error: any) {
-      console.log('❌ Session validation failed:', error?.response?.status);
-      
-      // Token invalid or user deleted
       if (error?.response?.status === 401 || error?.response?.status === 403) {
         await clearSession();
-        console.log('🧹 Session cleared due to invalid token');
         return false;
       }
-      
-      // Network error - keep session but mark as invalid
-      if (error?.message === 'Network Error') {
-        console.log('⚠️ Network error during validation, keeping session');
-        return true; // Keep session, will retry later
-      }
-      
-      return false;
+
+      return true;
     }
   },
 
-  /**
-   * 🔄 RESET STORE (clear all state)
-   */
+  // ======================
+  // RESET
+  // ======================
   reset: () => {
     set({
       user: null,
@@ -266,41 +228,37 @@ export const useAuthStore = create<AuthState>((set, get) => ({
       hydrated: true,
       isLoading: false,
     });
+    
+    console.log('✅ Store reset');
   },
 }));
 
-// Selector hooks for better performance
-export const useUser = () => useAuthStore((state) => state.user);
-export const useToken = () => useAuthStore((state) => state.token);
-export const useIsAuthenticated = () => useAuthStore((state) => !!state.user && !!state.token);
-export const useHydrated = () => useAuthStore((state) => state.hydrated);
-export const useIsLoading = () => useAuthStore((state) => state.isLoading);
+// ======================
+// HELPERS
+// ======================
+export const useUser = () => useAuthStore((s) => s.user);
+export const useToken = () => useAuthStore((s) => s.token);
+export const useIsAuthenticated = () =>
+  useAuthStore((s) => !!s.user && !!s.token);
+export const useHydrated = () => useAuthStore((s) => s.hydrated);
 
-// Utility function to check if user has specific role
 export const hasRole = (role: User['role']) => {
-  const user = useAuthStore.getState().user;
-  return user?.role === role;
+  return useAuthStore.getState().user?.role === role;
 };
 
-// Utility function to check if user is admin
 export const isAdmin = () => {
   const user = useAuthStore.getState().user;
   return user?.role === 'super_admin' || user?.role === 'district_admin';
 };
 
-// Utility function to check if user is farmer
 export const isFarmer = () => {
-  const user = useAuthStore.getState().user;
-  return user?.role === 'farmer';
+  return useAuthStore.getState().user?.role === 'farmer';
 };
 
-// Utility function to check if user is veterinarian
 export const isVeterinarian = () => {
-  const user = useAuthStore.getState().user;
-  return user?.role === 'veterinarian';
+  return useAuthStore.getState().user?.role === 'veterinarian';
 };
 
-// ✅ Export a function to manually validate session from anywhere
 export const validateSession = () => {
   return useAuthStore.getState().validateSession();
 };

@@ -7,9 +7,7 @@ import { Response, NextFunction } from 'express';
 import { AuthRequest } from './auth.middleware';
 import { 
   ROLE_PERMISSIONS, 
-  hasPermission, 
   getRoleName,
-  getAvailableRoles,
   getRoleColor,
   isSuperAdmin,
   isDistrictAdmin,

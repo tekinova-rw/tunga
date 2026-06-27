@@ -1,4 +1,8 @@
-// src/services/api.ts
+// ============================================================
+// FILE: src/services/api.ts
+// DESCRIPTION: API client for frontend
+// ============================================================
+
 import axios, {
   AxiosInstance,
   AxiosError,
@@ -29,17 +33,24 @@ interface ErrorResponse {
   [key: string]: any;
 }
 
-// API Configuration
+interface ExtendedAxiosRequestConfig extends InternalAxiosRequestConfig {
+  _retry?: boolean;
+}
+
+// ✅ FIX: Use your computer's IP address (10.7.33.242)
 const getBaseURL = (): string => {
   if (__DEV__) {
+    // 🔥 YOUR COMPUTER'S IP FROM IPCONFIG: 10.7.33.242
+    // ✅ For Android Emulator OR Physical Device
     if (Platform.OS === 'android') {
-      return 'http://10.0.2.2:5000/api';
+      return 'http://10.7.33.242:5000/api';  // ← Use your IP
     }
     if (Platform.OS === 'ios') {
-      return 'http://localhost:5000/api';
+      return 'http://10.7.33.242:5000/api';  // ← Use your IP for physical iOS too
+      // return 'http://localhost:5000/api';  // ← Use this for iOS Simulator
     }
-    // For physical device - use your computer's IP
-    return 'http://10.7.33.242:5000/api'; // ✅ Updated to your current IP
+    // For web
+    return 'http://localhost:5000/api';
   }
   return 'https://api.vetconnect.rw/api';
 };
@@ -49,15 +60,66 @@ const TOKEN_KEY = '@auth_token';
 const REFRESH_TOKEN_KEY = '@refresh_token';
 const USER_KEY = '@user_data';
 
+// Platform-aware storage helper
+const storage = {
+  getItem: async (key: string): Promise<string | null> => {
+    try {
+      if (Platform.OS === 'web') {
+        return localStorage.getItem(key);
+      }
+      return await AsyncStorage.getItem(key);
+    } catch (error) {
+      console.error(`Error getting item ${key}:`, error);
+      return null;
+    }
+  },
+  setItem: async (key: string, value: string): Promise<void> => {
+    try {
+      if (Platform.OS === 'web') {
+        localStorage.setItem(key, value);
+        return;
+      }
+      await AsyncStorage.setItem(key, value);
+    } catch (error) {
+      console.error(`Error setting item ${key}:`, error);
+    }
+  },
+  removeItem: async (key: string): Promise<void> => {
+    try {
+      if (Platform.OS === 'web') {
+        localStorage.removeItem(key);
+        return;
+      }
+      await AsyncStorage.removeItem(key);
+    } catch (error) {
+      console.error(`Error removing item ${key}:`, error);
+    }
+  },
+  multiRemove: async (keys: string[]): Promise<void> => {
+    try {
+      if (Platform.OS === 'web') {
+        keys.forEach(key => localStorage.removeItem(key));
+        return;
+      }
+      await AsyncStorage.multiRemove(keys);
+    } catch (error) {
+      console.error('Error removing items:', error);
+    }
+  }
+};
+
 // Create axios instance
 export const api: AxiosInstance = axios.create({
   baseURL: getBaseURL(),
-  timeout: 15000,
+  timeout: 30000,  // ✅ Increased timeout for better reliability
   headers: {
     'Content-Type': 'application/json',
     Accept: 'application/json',
   },
 });
+
+// ✅ Log the API URL for debugging
+console.log('📍 API Base URL:', getBaseURL());
 
 // Request tracking for pending requests
 let pendingRequests: Map<string, AbortController> = new Map();
@@ -89,7 +151,7 @@ const cancelPendingRequest = (url: string) => {
 // Token management
 export const setAuthToken = async (token: string): Promise<void> => {
   try {
-    await AsyncStorage.setItem(TOKEN_KEY, token);
+    await storage.setItem(TOKEN_KEY, token);
     api.defaults.headers.common['Authorization'] = `Bearer ${token}`;
   } catch (error) {
     console.error('Error saving token:', error);
@@ -98,7 +160,7 @@ export const setAuthToken = async (token: string): Promise<void> => {
 
 export const getAuthToken = async (): Promise<string | null> => {
   try {
-    return await AsyncStorage.getItem(TOKEN_KEY);
+    return await storage.getItem(TOKEN_KEY);
   } catch (error) {
     console.error('Error getting token:', error);
     return null;
@@ -107,7 +169,7 @@ export const getAuthToken = async (): Promise<string | null> => {
 
 export const setRefreshToken = async (token: string): Promise<void> => {
   try {
-    await AsyncStorage.setItem(REFRESH_TOKEN_KEY, token);
+    await storage.setItem(REFRESH_TOKEN_KEY, token);
   } catch (error) {
     console.error('Error saving refresh token:', error);
   }
@@ -115,7 +177,7 @@ export const setRefreshToken = async (token: string): Promise<void> => {
 
 export const getRefreshToken = async (): Promise<string | null> => {
   try {
-    return await AsyncStorage.getItem(REFRESH_TOKEN_KEY);
+    return await storage.getItem(REFRESH_TOKEN_KEY);
   } catch (error) {
     console.error('Error getting refresh token:', error);
     return null;
@@ -124,7 +186,7 @@ export const getRefreshToken = async (): Promise<string | null> => {
 
 export const clearTokens = async (): Promise<void> => {
   try {
-    await AsyncStorage.multiRemove([TOKEN_KEY, REFRESH_TOKEN_KEY, USER_KEY]);
+    await storage.multiRemove([TOKEN_KEY, REFRESH_TOKEN_KEY, USER_KEY]);
     delete api.defaults.headers.common['Authorization'];
   } catch (error) {
     console.error('Error clearing tokens:', error);
@@ -169,7 +231,7 @@ api.interceptors.response.use(
     return response;
   },
   async (error: AxiosError) => {
-    const originalRequest = error.config as InternalAxiosRequestConfig & { _retry?: boolean };
+    const originalRequest = error.config as ExtendedAxiosRequestConfig;
     const requestKey = `${originalRequest.method}:${originalRequest.url}`;
     pendingRequests.delete(requestKey);
     
@@ -250,7 +312,7 @@ api.interceptors.response.use(
       }
     }
     
-    // Format error message - FIXED: properly typed error data
+    // Format error message
     const apiError: ApiError = {
       message: errorData?.message || error.message || 'An error occurred',
       status: error.response?.status,
@@ -306,7 +368,6 @@ export const getCurrentApiUrl = (): string => {
   return getBaseURL();
 };
 
-// ✅ Add a utility to check if API is reachable
 export const pingApi = async (): Promise<boolean> => {
   try {
     await api.get('/api/test', { timeout: 5000 });
@@ -317,7 +378,6 @@ export const pingApi = async (): Promise<boolean> => {
   }
 };
 
-// ✅ Add a utility to get API status
 export const getApiStatus = async (): Promise<{
   online: boolean;
   url: string;

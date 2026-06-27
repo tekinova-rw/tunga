@@ -696,7 +696,6 @@ export const updateUserRole = async (req: AuthRequest, res: Response) => {
     }
 
     // 3. Cannot assign role to yourself
-    // FIX: Safely parse the ID
     const targetUserId = parseId(id);
     if (user.id === targetUserId) {
       return res.status(400).json({
@@ -972,7 +971,7 @@ export const createAdmin = async (req: AuthRequest, res: Response) => {
  * =========================
  * GET /api/admin/test-db
  */
-export const testDbConnection = async (req: AuthRequest, res: Response) => {
+export const testDbConnection = async (_req: AuthRequest, res: Response) => {
   try {
     console.log('🔍 Testing database connection...');
     

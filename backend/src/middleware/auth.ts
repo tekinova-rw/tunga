@@ -1,4 +1,8 @@
-// backend/src/middleware/auth.ts
+// ============================================================
+// FILE: backend/src/middleware/auth.ts
+// DESCRIPTION: Authentication middleware for JWT validation
+// ============================================================
+
 import { Request, Response, NextFunction } from 'express';
 import jwt from 'jsonwebtoken';
 import { db } from '../config/db';
@@ -163,7 +167,7 @@ export const authenticateToken = async (
  */
 export const optionalAuth = async (
   req: AuthRequest,
-  res: Response,
+  _res: Response,  // ✅ Added underscore to indicate unused
   next: NextFunction
 ): Promise<void> => {
   try {
@@ -278,4 +282,17 @@ export const canAccessDistrict = (
   }
   
   return false;
+};
+
+// Export all functions as default
+export default {
+  authenticateToken,
+  optionalAuth,
+  getAuthUser,
+  isAuthenticated,
+  hasRole,
+  isAdmin,
+  isSuperAdmin,
+  isDistrictAdmin,
+  canAccessDistrict,
 };

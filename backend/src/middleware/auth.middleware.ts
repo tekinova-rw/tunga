@@ -42,7 +42,7 @@ export const authenticate = (
   req: AuthRequest,
   res: Response,
   next: NextFunction
-) => {
+): void => {
   try {
     console.log('🔐 Auth middleware started');
 
@@ -51,35 +51,36 @@ export const authenticate = (
 
     if (!authHeader) {
       console.log('❌ No authorization header found');
-      return res.status(401).json({ 
+      res.status(401).json({ 
         success: false,
         message: 'No token provided' 
       });
+      return;
     }
 
     const parts = authHeader.split(' ');
 
     if (parts.length !== 2 || parts[0] !== 'Bearer') {
       console.log('❌ Invalid authorization format');
-      return res.status(401).json({ 
+      res.status(401).json({ 
         success: false,
         message: 'Invalid authorization format. Expected: Bearer <token>' 
       });
+      return;
     }
 
     const token = parts[1];
     console.log('🔐 Token received:', token.substring(0, 20) + '...');
 
-    // Check if JWT_ACCESS_SECRET is configured
     if (!process.env.JWT_ACCESS_SECRET) {
       console.error('❌ JWT_ACCESS_SECRET not configured in environment');
-      return res.status(500).json({ 
+      res.status(500).json({ 
         success: false,
         message: 'Server configuration error' 
       });
+      return;
     }
 
-    // 🔐 VERIFY ACCESS TOKEN ONLY
     let decoded: JwtPayload;
     try {
       decoded = jwt.verify(token, process.env.JWT_ACCESS_SECRET) as JwtPayload;
@@ -88,50 +89,52 @@ export const authenticate = (
       console.error('❌ JWT verification failed:', jwtError.message);
       
       if (jwtError.name === 'TokenExpiredError') {
-        return res.status(401).json({ 
+        res.status(401).json({ 
           success: false,
           message: 'Access token expired',
           code: 'TOKEN_EXPIRED'
         });
+        return;
       }
       
       if (jwtError.name === 'JsonWebTokenError') {
-        return res.status(401).json({ 
+        res.status(401).json({ 
           success: false,
           message: 'Invalid token',
           code: 'INVALID_TOKEN'
         });
+        return;
       }
       
-      return res.status(401).json({ 
+      res.status(401).json({ 
         success: false,
         message: 'Token validation failed',
         code: 'TOKEN_VALIDATION_FAILED'
       });
+      return;
     }
 
-    // Validate decoded token has required fields
     if (!decoded || typeof decoded === 'string') {
       console.log('❌ Invalid token payload');
-      return res.status(401).json({ 
+      res.status(401).json({ 
         success: false,
         message: 'Invalid token payload' 
       });
+      return;
     }
 
-    // Check required fields
     if (!decoded.id || !decoded.role) {
       console.log('❌ Token missing required fields:', { 
         hasId: !!decoded.id, 
         hasRole: !!decoded.role 
       });
-      return res.status(401).json({ 
+      res.status(401).json({ 
         success: false,
         message: 'Invalid token - missing user data' 
       });
+      return;
     }
 
-    // Attach user to request
     req.user = {
       id: decoded.id,
       role: decoded.role,
@@ -153,7 +156,7 @@ export const authenticate = (
     next();
   } catch (err: any) {
     console.error('❌ Auth middleware error:', err.message);
-    return res.status(401).json({ 
+    res.status(401).json({ 
       success: false,
       message: 'Authentication failed',
       error: process.env.NODE_ENV === 'development' ? err.message : undefined
@@ -170,29 +173,32 @@ export const authenticate = (
  */
 export const optionalAuthenticate = (
   req: AuthRequest,
-  res: Response,
+  _res: Response,  // ✅ Added underscore to indicate unused
   next: NextFunction
-) => {
+): void => {
   try {
     const authHeader = req.headers.authorization;
 
     if (!authHeader) {
       console.log('ℹ️ Optional auth: No token provided, continuing as guest');
-      return next();
+      next();
+      return;
     }
 
     const parts = authHeader.split(' ');
 
     if (parts.length !== 2 || parts[0] !== 'Bearer') {
       console.log('ℹ️ Optional auth: Invalid format, continuing as guest');
-      return next();
+      next();
+      return;
     }
 
     const token = parts[1];
 
     if (!process.env.JWT_ACCESS_SECRET) {
       console.error('❌ JWT_ACCESS_SECRET not configured');
-      return next();
+      next();
+      return;
     }
 
     try {
@@ -207,7 +213,6 @@ export const optionalAuthenticate = (
         console.log('✅ Optional auth: User attached:', { id: req.user.id, role: req.user.role });
       }
     } catch (err) {
-      // Token invalid but we continue as guest
       console.log('ℹ️ Optional auth: Token invalid, continuing as guest');
     }
 
@@ -224,127 +229,132 @@ export const optionalAuthenticate = (
  * =========================
  */
 
-// Check if user is super admin
 export const isSuperAdmin = (
   req: AuthRequest,
   res: Response,
   next: NextFunction
-) => {
+): void => {
   if (!req.user) {
     console.log('❌ isSuperAdmin: No user found in request');
-    return res.status(401).json({
+    res.status(401).json({
       success: false,
       message: 'Unauthorized - No user authenticated',
     });
+    return;
   }
 
   if (req.user.role !== 'super_admin') {
     console.log(`❌ isSuperAdmin: User ${req.user.id} is not super_admin (role: ${req.user.role})`);
-    return res.status(403).json({
+    res.status(403).json({
       success: false,
       message: 'Forbidden - Super admin access required',
     });
+    return;
   }
 
   console.log(`✅ Super admin access granted for user: ${req.user.id}`);
   next();
 };
 
-// Check if user is admin (super or district)
 export const isAdmin = (
   req: AuthRequest,
   res: Response,
   next: NextFunction
-) => {
+): void => {
   if (!req.user) {
     console.log('❌ isAdmin: No user found in request');
-    return res.status(401).json({
+    res.status(401).json({
       success: false,
       message: 'Unauthorized - No user authenticated',
     });
+    return;
   }
 
   if (req.user.role !== 'super_admin' && req.user.role !== 'district_admin') {
     console.log(`❌ isAdmin: User ${req.user.id} is not admin (role: ${req.user.role})`);
-    return res.status(403).json({
+    res.status(403).json({
       success: false,
       message: 'Forbidden - Admin access required',
     });
+    return;
   }
 
   console.log(`✅ Admin access granted for user: ${req.user.id} (role: ${req.user.role})`);
   next();
 };
 
-// Check if user is veterinarian
 export const isVeterinarian = (
   req: AuthRequest,
   res: Response,
   next: NextFunction
-) => {
+): void => {
   if (!req.user) {
     console.log('❌ isVeterinarian: No user found in request');
-    return res.status(401).json({
+    res.status(401).json({
       success: false,
       message: 'Unauthorized - No user authenticated',
     });
+    return;
   }
 
   if (req.user.role !== 'veterinarian') {
     console.log(`❌ isVeterinarian: User ${req.user.id} is not a veterinarian (role: ${req.user.role})`);
-    return res.status(403).json({
+    res.status(403).json({
       success: false,
       message: 'Forbidden - Veterinarian access required',
     });
+    return;
   }
 
   console.log(`✅ Veterinarian access granted for user: ${req.user.id}`);
   next();
 };
 
-// Check if user is farmer
 export const isFarmer = (
   req: AuthRequest,
   res: Response,
   next: NextFunction
-) => {
+): void => {
   if (!req.user) {
     console.log('❌ isFarmer: No user found in request');
-    return res.status(401).json({
+    res.status(401).json({
       success: false,
       message: 'Unauthorized - No user authenticated',
     });
+    return;
   }
 
   if (req.user.role !== 'farmer') {
     console.log(`❌ isFarmer: User ${req.user.id} is not a farmer (role: ${req.user.role})`);
-    return res.status(403).json({
+    res.status(403).json({
       success: false,
       message: 'Forbidden - Farmer access required',
     });
+    return;
   }
 
   console.log(`✅ Farmer access granted for user: ${req.user.id}`);
   next();
 };
 
-// Check if user has one of the allowed roles
 export const hasRole = (allowedRoles: string[]) => {
-  return (req: AuthRequest, res: Response, next: NextFunction) => {
+  return (req: AuthRequest, res: Response, next: NextFunction): void => {
     if (!req.user) {
       console.log('❌ hasRole: No user found in request');
-      return res.status(401).json({
+      res.status(401).json({
         success: false,
         message: 'Unauthorized - No user authenticated',
       });
+      return;
     }
 
     if (!allowedRoles.includes(req.user.role)) {
       console.log(`❌ hasRole: User ${req.user.id} has role ${req.user.role}, allowed: ${allowedRoles.join(', ')}`);
-      return res.status(403).json({
+      res.status(403).json({
         success: false,
         message: `Forbidden - Required roles: ${allowedRoles.join(', ')}`,
       });
+      return;
     }
 
     console.log(`✅ Role access granted for user: ${req.user.id} (role: ${req.user.role})`);
@@ -352,10 +362,8 @@ export const hasRole = (allowedRoles: string[]) => {
   };
 };
 
-// Export authenticate as authMiddleware for backward compatibility
 export const authMiddleware = authenticate;
 
-// Default export
 export default {
   authenticate,
   optionalAuthenticate,

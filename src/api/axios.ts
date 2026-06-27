@@ -11,7 +11,7 @@ import { useAuthStore } from '@/store/auth-store';
  * DEVELOPMENT API URL
  *
  * Expo Go + Phone:
- * http://10.7.33.244:5000/api
+ * http://10.7.33.242:5000/api
  *
  * Android Emulator:
  * http://10.0.2.2:5000/api

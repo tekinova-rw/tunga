@@ -1,4 +1,8 @@
-// src/app/(auth)/login.tsx
+// ============================================================
+// FILE: src/app/(auth)/login.tsx
+// DESCRIPTION: Login screen
+// ============================================================
+
 import { useState } from 'react';
 import {
   ActivityIndicator,
@@ -18,8 +22,9 @@ import { Ionicons } from '@expo/vector-icons';
 import { Link, useRouter } from 'expo-router';
 import { Controller, useForm } from 'react-hook-form';
 
+// ✅ FIX: Use the correct imports
 import { useAuthStore } from '@/store/auth-store';
-import { api } from '../../api/axios';
+import { api } from '@/services/api';
 
 type LoginFormData = {
   identifier: string;
@@ -63,15 +68,50 @@ export default function LoginScreen() {
 
       console.log('📥 LOGIN RESPONSE:', response.data);
 
-      const { token, refreshToken, user } = response.data;
+      // ✅ Handle different response structures
+      const responseData = response.data;
+      
+      // Check if response has the expected structure
+      let token, refreshToken, user;
+      
+      if (responseData.data) {
+        // Structure: { success: true, data: { token, refreshToken, user } }
+        token = responseData.data.token || responseData.data.accessToken;
+        refreshToken = responseData.data.refreshToken;
+        user = responseData.data.user;
+      } else if (responseData.token) {
+        // Structure: { success: true, token, refreshToken, user }
+        token = responseData.token || responseData.accessToken;
+        refreshToken = responseData.refreshToken;
+        user = responseData.user;
+      } else {
+        // Try to extract from response directly
+        token = responseData.token || responseData.accessToken;
+        refreshToken = responseData.refreshToken;
+        user = responseData.user;
+      }
 
       if (!token || !user) {
-        Alert.alert('Login Failed', 'Invalid server response');
+        console.log('❌ Invalid login response:', responseData);
+        Alert.alert('Login Failed', 'Invalid server response. Please try again.');
+        setLoading(false);
         return;
       }
 
-      // ✅ Login the user
+      console.log('✅ Login successful for:', user.full_name || user.email);
+
+      // ✅ Login the user using the store
       await login(user, token, refreshToken);
+
+      // ✅ Check store state after login
+      const storeState = useAuthStore.getState();
+      console.log('📦 Store after login:', {
+        hasUser: !!storeState.user,
+        hasToken: !!storeState.token,
+        hydrated: storeState.hydrated,
+        isLoading: storeState.isLoading,
+        role: storeState.user?.role,
+      });
 
       // ✅ Try to validate session, but don't fail if it doesn't work
       try {
@@ -84,7 +124,8 @@ export default function LoginScreen() {
         // Continue anyway - user is logged in
       }
 
-      Alert.alert('Success', `Welcome back, ${user.full_name || 'User'}!`);
+      // ✅ Show success message
+      Alert.alert('Success', `Welcome back, ${user.full_name || user.email || 'User'}!`);
 
       // ✅ Navigate based on user role
       const roleRoutes: Record<string, string> = {
@@ -95,9 +136,13 @@ export default function LoginScreen() {
       };
 
       const route = roleRoutes[user.role] || '/';
-      router.replace({
-        pathname: route,
-      } as any);
+      console.log('🔀 Navigating to:', route);
+      
+      // ✅ Wait for state to update before navigating
+      await new Promise(resolve => setTimeout(resolve, 300));
+      
+      // ✅ Use replace to prevent going back to login
+      router.replace(route as any);
 
     } catch (error: any) {
       console.log('❌ LOGIN ERROR DETAILS:', {
@@ -127,6 +172,8 @@ export default function LoginScreen() {
           errorMessage = 'Your account has been deleted. Please contact support.';
         } else if (errorMessage === 'Account is deactivated') {
           errorMessage = 'Your account is deactivated. Please contact support.';
+        } else if (errorMessage === 'Account not active') {
+          errorMessage = 'Your account is not active. Please contact support.';
         }
       } else if (error.message === 'Network Error') {
         errorMessage = `Network error - cannot connect to ${api.defaults.baseURL}`;
@@ -148,7 +195,7 @@ export default function LoginScreen() {
 
   return (
     <KeyboardAvoidingView
-      style={{ flex: 1 }}
+      style={{ flex: 1, backgroundColor: '#f5f5f5' }}
       behavior={Platform.OS === 'ios' ? 'padding' : undefined}
     >
       <ScrollView

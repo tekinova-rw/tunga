@@ -1,4 +1,8 @@
-// src/app/(farmer)/animals/index.tsx
+// ============================================================
+// FILE: src/app/(farmer)/animals/index.tsx
+// DESCRIPTION: Animals list screen for farmers
+// ============================================================
+
 import {
   ActivityIndicator,
   FlatList,
@@ -6,21 +10,45 @@ import {
   TouchableOpacity,
   View,
   StyleSheet,
-  Alert,
+  RefreshControl,
 } from 'react-native';
 import { router } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
+import { useState } from 'react';
 
 import { useAnimals } from '@/hooks/useAnimals';
-import { Animal } from '@/services/animal-service';
+
+// Define Animal type matching the backend
+interface Animal {
+  id: number | string; // Allow both number and string
+  name: string;
+  category: string;
+  age: number;
+  weight: number;
+  health_status: string;
+  breed?: string;
+  gender?: string;
+  created_at?: string;
+  updated_at?: string;
+}
 
 export default function AnimalsScreen() {
+  const [refreshing, setRefreshing] = useState(false);
+  
   const {
     data,
     isLoading,
     error,
+    refetch,
   } = useAnimals();
 
+  const onRefresh = async () => {
+    setRefreshing(true);
+    await refetch();
+    setRefreshing(false);
+  };
+
+  // Loading state
   if (isLoading) {
     return (
       <View style={styles.centered}>
@@ -30,12 +58,19 @@ export default function AnimalsScreen() {
     );
   }
 
+  // Error state
   if (error) {
+    console.log('❌ Animals fetch error:', error);
     return (
       <View style={styles.centered}>
         <Ionicons name="sad-outline" size={60} color="#ccc" />
         <Text style={styles.errorText}>Failed to load animals</Text>
-        <Text style={styles.errorSubtext}>{error.message}</Text>
+        <Text style={styles.errorSubtext}>
+          {error.message || 'Please check your connection and try again'}
+        </Text>
+        <TouchableOpacity style={styles.retryButton} onPress={() => refetch()}>
+          <Text style={styles.retryButtonText}>Retry</Text>
+        </TouchableOpacity>
       </View>
     );
   }
@@ -43,62 +78,122 @@ export default function AnimalsScreen() {
   // Ensure data is an array (handle undefined/null)
   const animals: Animal[] = Array.isArray(data) ? data : [];
 
+  // Empty state
   if (animals.length === 0) {
     return (
       <View style={styles.centered}>
         <Ionicons name="paw-outline" size={60} color="#ccc" />
         <Text style={styles.emptyText}>No animals yet</Text>
-        <Text style={styles.emptySubtext}>Tap the + button to add your first animal</Text>
+        <Text style={styles.emptySubtext}>
+          Tap the + button to add your first animal
+        </Text>
+        <TouchableOpacity 
+          style={styles.addButton}
+          onPress={() => router.push('/(farmer)/animals/add' as any)}
+        >
+          <Ionicons name="add" size={24} color="#fff" />
+          <Text style={styles.addButtonText}>Add Animal</Text>
+        </TouchableOpacity>
       </View>
     );
   }
 
+  // Get emoji for animal category
+  const getAnimalEmoji = (category: string) => {
+    const emojis: Record<string, string> = {
+      cow: '🐄',
+      cattle: '🐄',
+      goat: '🐐',
+      sheep: '🐑',
+      pig: '🐷',
+      chicken: '🐔',
+      rabbit: '🐰',
+      horse: '🐴',
+      dog: '🐕',
+      cat: '🐱',
+      duck: '🦆',
+      turkey: '🦃',
+      fish: '🐟',
+      other: '🐾',
+    };
+    return emojis[category?.toLowerCase()] || '🐾';
+  };
+
+  // Get health status color
+  const getHealthColor = (status: string) => {
+    const colors: Record<string, string> = {
+      healthy: '#4CAF50',
+      good: '#4CAF50',
+      sick: '#f44336',
+      recovering: '#FF9800',
+      under_treatment: '#2196F3',
+      treatment: '#2196F3',
+      critical: '#D32F2F',
+      deceased: '#757575',
+      quarantined: '#9C27B0',
+      unknown: '#999',
+    };
+    return colors[status?.toLowerCase()] || '#999';
+  };
+
+  // Render individual animal card
+  const renderAnimalCard = ({ item }: { item: Animal }) => (
+    <TouchableOpacity
+      style={styles.card}
+      onPress={() => router.push({
+        pathname: '/(farmer)/animals/[id]',
+        params: { id: item.id.toString() }
+      } as any)}
+      activeOpacity={0.7}
+    >
+      <View style={styles.cardContent}>
+        <View style={styles.iconContainer}>
+          <Text style={styles.animalIcon}>
+            {getAnimalEmoji(item.category)}
+          </Text>
+        </View>
+        <View style={styles.infoContainer}>
+          <Text style={styles.animalName}>{item.name || 'Unnamed'}</Text>
+          <Text style={styles.animalDetails}>
+            {item.category || 'Unknown'} • {item.age || 0} {item.age === 1 ? 'year' : 'years'} • {item.weight || 0}kg
+          </Text>
+          <View style={styles.healthContainer}>
+            <View style={[styles.healthDot, { 
+              backgroundColor: getHealthColor(item.health_status)
+            }]} />
+            <Text style={styles.healthText}>
+              {(item.health_status?.toUpperCase() || 'UNKNOWN')}
+            </Text>
+          </View>
+        </View>
+        <Ionicons name="chevron-forward" size={20} color="#ccc" />
+      </View>
+    </TouchableOpacity>
+  );
+
   return (
     <FlatList
       data={animals}
-      keyExtractor={(item) => item.id.toString()}
-      renderItem={({ item }) => (
-        <TouchableOpacity
-          style={styles.card}
-          onPress={() => router.push({
-            pathname: '/(farmer)/animals/[id]',
-            params: { id: item.id }
-          } as any)}
-          activeOpacity={0.7}
-        >
-          <View style={styles.cardContent}>
-            <View style={styles.iconContainer}>
-              <Text style={styles.animalIcon}>
-                {item.category === 'Cow' ? '🐄' : 
-                 item.category === 'Goat' ? '🐐' : 
-                 item.category === 'Sheep' ? '🐑' : 
-                 item.category === 'Pig' ? '🐷' : 
-                 item.category === 'Chicken' ? '🐔' : '🐾'}
-              </Text>
-            </View>
-            <View style={styles.infoContainer}>
-              <Text style={styles.animalName}>{item.name}</Text>
-              <Text style={styles.animalDetails}>
-                {item.category} • {item.age} {item.age === 1 ? 'year' : 'years'} • {item.weight}kg
-              </Text>
-              <View style={styles.healthContainer}>
-                <View style={[styles.healthDot, { 
-                  backgroundColor: 
-                    item.health_status === 'healthy' ? '#4CAF50' :
-                    item.health_status === 'sick' ? '#f44336' :
-                    item.health_status === 'recovering' ? '#FF9800' : '#999'
-                }]} />
-                <Text style={styles.healthText}>
-                  {item.health_status?.toUpperCase() || 'UNKNOWN'}
-                </Text>
-              </View>
-            </View>
-            <Ionicons name="chevron-forward" size={20} color="#ccc" />
-          </View>
-        </TouchableOpacity>
-      )}
+      keyExtractor={(item) => String(item.id || Math.random())}
+      renderItem={renderAnimalCard}
       contentContainerStyle={styles.listContent}
       showsVerticalScrollIndicator={false}
+      refreshControl={
+        <RefreshControl
+          refreshing={refreshing}
+          onRefresh={onRefresh}
+          colors={['#2E7D32']}
+          tintColor="#2E7D32"
+        />
+      }
+      ListHeaderComponent={
+        <View style={styles.headerContainer}>
+          <Text style={styles.headerTitle}>My Animals</Text>
+          <Text style={styles.headerSubtitle}>
+            {animals.length} {animals.length === 1 ? 'animal' : 'animals'} registered
+          </Text>
+        </View>
+      }
     />
   );
 }
@@ -128,6 +223,18 @@ const styles = StyleSheet.create({
     marginTop: 8,
     textAlign: 'center',
   },
+  retryButton: {
+    marginTop: 20,
+    backgroundColor: '#2E7D32',
+    paddingHorizontal: 24,
+    paddingVertical: 12,
+    borderRadius: 8,
+  },
+  retryButtonText: {
+    color: '#fff',
+    fontSize: 16,
+    fontWeight: '600',
+  },
   emptyText: {
     fontSize: 18,
     fontWeight: '600',
@@ -140,9 +247,43 @@ const styles = StyleSheet.create({
     marginTop: 8,
     textAlign: 'center',
   },
+  addButton: {
+    marginTop: 20,
+    backgroundColor: '#2E7D32',
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 20,
+    paddingVertical: 12,
+    borderRadius: 8,
+    gap: 8,
+  },
+  addButtonText: {
+    color: '#fff',
+    fontSize: 16,
+    fontWeight: '600',
+  },
+  headerContainer: {
+    backgroundColor: '#fff',
+    padding: 16,
+    marginBottom: 12,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: '#e0e0e0',
+  },
+  headerTitle: {
+    fontSize: 20,
+    fontWeight: 'bold',
+    color: '#1B5E20',
+  },
+  headerSubtitle: {
+    fontSize: 14,
+    color: '#666',
+    marginTop: 4,
+  },
   listContent: {
     padding: 16,
     backgroundColor: '#f5f5f5',
+    paddingBottom: 80,
   },
   card: {
     backgroundColor: '#fff',

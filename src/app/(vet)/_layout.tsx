@@ -1,20 +1,39 @@
-// src/app/(vet)/_layout.tsx
-import { Stack } from 'expo-router';
+// ============================================================
+// FILE: src/app/(vet)/_layout.tsx
+// DESCRIPTION: Veterinarian app layout with tabs and navigation
+// ============================================================
+
+import { Tabs } from 'expo-router';
 import { useEffect } from 'react';
 import { useAuthStore } from '@/store/auth-store';
 import { Redirect } from 'expo-router';
-import { View, ActivityIndicator } from 'react-native';
+import { View, ActivityIndicator, ColorValue } from 'react-native';
+import { Ionicons } from '@expo/vector-icons';
+
+// Tab Icon helper
+const TabIcon = ({
+  name,
+  color,
+  size,
+}: {
+  name: any;
+  color: ColorValue;
+  size: number;
+}) => {
+  return <Ionicons name={name} size={size} color={color as string} />;
+};
 
 export default function VetLayout() {
   const { user, token, hydrated, hydrate } = useAuthStore();
 
+  // ensure hydration
   useEffect(() => {
     if (!hydrated) {
       hydrate();
     }
   }, [hydrated]);
 
-  // Show loading while hydrating
+  // LOADING STATE
   if (!hydrated) {
     return (
       <View
@@ -25,85 +44,115 @@ export default function VetLayout() {
           backgroundColor: '#f5f5f5',
         }}
       >
-        <ActivityIndicator size="large" color="#2196F3" />
+        <ActivityIndicator size="large" color="#7B1FA2" />
       </View>
     );
   }
 
-  // Redirect if not authenticated
+  // AUTH CHECK
   if (!user || !token) {
     return <Redirect href="/(auth)/login" />;
   }
 
-  // ✅ Redirect if user is not a veterinarian
+  // ROLE GUARD
   if (user.role !== 'veterinarian') {
-    // Redirect to appropriate dashboard based on role
     if (user.role === 'farmer') {
       return <Redirect href="/(farmer)/dashboard" />;
     }
-    if (user.role === 'super_admin' || user.role === 'district_admin') {
+    if (
+      user.role === 'super_admin' ||
+      user.role === 'district_admin'
+    ) {
       return <Redirect href="/(admin)/dashboard" />;
     }
     return <Redirect href="/(auth)/login" />;
   }
 
+  // ============================================================
+  // MAIN NAVIGATION (TABS ONLY - FIXED)
+  // ============================================================
   return (
-    <Stack
+    <Tabs
       screenOptions={{
-        headerShown: true,
+        tabBarActiveTintColor: '#7B1FA2',
+        tabBarInactiveTintColor: '#999',
+        tabBarStyle: {
+          backgroundColor: '#fff',
+          borderTopWidth: 1,
+          borderTopColor: '#e0e0e0',
+          height: 60,
+          paddingBottom: 8,
+          paddingTop: 4,
+        },
         headerStyle: {
-          backgroundColor: '#2196F3',
+          backgroundColor: '#7B1FA2',
         },
         headerTintColor: '#fff',
         headerTitleStyle: {
           fontWeight: 'bold',
         },
-        headerBackTitle: '',
+        // ✅ FIX: headerBackTitle removed - it doesn't exist in Tabs
       }}
     >
-      <Stack.Screen
+      {/* Dashboard */}
+      <Tabs.Screen
         name="dashboard"
         options={{
-          title: 'Dashboard',
+          title: 'Home',
           headerShown: false,
+          tabBarIcon: ({ color, size }) => (
+            <TabIcon name="home-outline" color={color} size={size} />
+          ),
         }}
       />
-      <Stack.Screen
+
+      {/* Appointments */}
+      <Tabs.Screen
         name="appointments"
         options={{
           title: 'Appointments',
+          headerShown: true,
+          tabBarIcon: ({ color, size }) => (
+            <TabIcon name="calendar-outline" color={color} size={size} />
+          ),
         }}
       />
-      <Stack.Screen
+
+      {/* Messages */}
+      <Tabs.Screen
+        name="messages"
+        options={{
+          title: 'Chat',
+          headerShown: true,
+          tabBarIcon: ({ color, size }) => (
+            <TabIcon name="chatbubbles-outline" color={color} size={size} />
+          ),
+        }}
+      />
+
+      {/* Requests */}
+      <Tabs.Screen
         name="requests"
         options={{
           title: 'Requests',
+          headerShown: true,
+          tabBarIcon: ({ color, size }) => (
+            <TabIcon name="document-text-outline" color={color} size={size} />
+          ),
         }}
       />
-      <Stack.Screen
+
+      {/* Profile */}
+      <Tabs.Screen
         name="profile"
         options={{
           title: 'Profile',
+          headerShown: true,
+          tabBarIcon: ({ color, size }) => (
+            <TabIcon name="person-outline" color={color} size={size} />
+          ),
         }}
       />
-      <Stack.Screen
-        name="explore"
-        options={{
-          title: 'Explore',
-        }}
-      />
-      <Stack.Screen
-        name="messages"
-        options={{
-          title: 'Messages',
-        }}
-      />
-      <Stack.Screen
-        name="change-password"
-        options={{
-          title: 'Change Password',
-        }}
-      />
-    </Stack>
+    </Tabs>
   );
 }

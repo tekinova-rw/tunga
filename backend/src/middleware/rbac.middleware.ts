@@ -1,5 +1,9 @@
-// backend/src/middleware/rbac.middleware.ts
-import { Request, Response, NextFunction } from 'express';
+// ============================================================
+// FILE: backend/src/middleware/rbac.middleware.ts
+// DESCRIPTION: Role-Based Access Control middleware
+// ============================================================
+
+import { NextFunction, Response } from 'express';
 import { AuthRequest } from './auth.middleware';
 
 /**
@@ -154,10 +158,8 @@ export const requireAccess = (resource: keyof typeof ROLE_ACCESS) => {
         return;
       }
 
-      // ✅ FIX: Get allowed roles as string array
       const allowedRoles = ROLE_ACCESS[resource] || [];
       
-      // ✅ FIX: Compare string roles directly
       if (!allowedRoles.includes(user.role)) {
         res.status(403).json({
           success: false,
@@ -286,4 +288,74 @@ export const getHighestRole = (roles: UserRole[]): UserRole | null => {
     const currentLevel = ROLE_HIERARCHY[current];
     return currentLevel > highestLevel ? current : highest;
   });
+};
+
+/**
+ * =========================
+ * CAN ACCESS DISTRICT
+ * =========================
+ * Check if user can access a specific district
+ */
+export const canAccessDistrict = (user: any, districtId: number): boolean => {
+  if (!user) return false;
+  
+  // Super admin can access all districts
+  if (user.role === 'super_admin') return true;
+  
+  // District admin can only access their own district
+  if (user.role === 'district_admin') {
+    return user.district_id === districtId;
+  }
+  
+  // Other users can only access their own district
+  return user.district_id === districtId;
+};
+
+/**
+ * =========================
+ * CAN ACCESS USER
+ * =========================
+ * Check if user can access/modify another user
+ * Note: This is a basic check - for full implementation,
+ * you might need to query the database to check district
+ */
+export const canAccessUser = (currentUser: any, targetUserId: number): boolean => {
+  if (!currentUser) return false;
+  
+  // Super admin can access all users
+  if (currentUser.role === 'super_admin') return true;
+  
+  // Users can access themselves
+  if (currentUser.id === targetUserId) return true;
+  
+  // District admin can access users in their district
+  // This would require a database query to check the target user's district
+  // For now, we'll return false for district admins unless it's themselves
+  if (currentUser.role === 'district_admin') {
+    // You would need to query the database here
+    // return await userIsInDistrict(targetUserId, currentUser.district_id);
+    return false;
+  }
+  
+  return false;
+};
+
+// Export all functions as default
+export default {
+  ROLE_HIERARCHY,
+  ROLE_ACCESS,
+  requireRole,
+  requireMinRole,
+  requireAccess,
+  hasRolePermission,
+  hasMinRole,
+  getRoleLevel,
+  isAdmin,
+  isSuperAdmin,
+  isDistrictAdmin,
+  isVeterinarian,
+  isFarmer,
+  getHighestRole,
+  canAccessDistrict,
+  canAccessUser,
 };

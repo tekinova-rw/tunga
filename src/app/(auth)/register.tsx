@@ -1,5 +1,9 @@
-// src/app/(auth)/register.tsx
-import { useState } from 'react';
+// ============================================================
+// FILE: src/app/(auth)/register.tsx
+// DESCRIPTION: Register screen with role selection
+// ============================================================
+
+import { useState, useEffect } from 'react';
 import {
   ActivityIndicator,
   Alert,
@@ -17,7 +21,7 @@ import {
 import { Ionicons } from '@expo/vector-icons';
 import { Link, useRouter } from 'expo-router';
 import { Controller, useForm } from 'react-hook-form';
-import { api } from '../../api/axios';
+import { api } from '@/services/api';
 
 type RegisterFormData = {
   full_name: string;
@@ -26,6 +30,7 @@ type RegisterFormData = {
   password: string;
   confirmPassword: string;
   role: string;
+  district_id: number;
   // Veterinarian specific fields
   license_number?: string;
   specialization?: string;
@@ -34,19 +39,29 @@ type RegisterFormData = {
   clinic_address?: string;
 };
 
+type District = {
+  id: number;
+  name: string;
+  province: string;
+};
+
 export default function RegisterScreen() {
   const router = useRouter();
   const [loading, setLoading] = useState(false);
+  const [loadingDistricts, setLoadingDistricts] = useState(true);
+  const [districts, setDistricts] = useState<District[]>([]);
   const [showPassword, setShowPassword] = useState(false);
   const [showConfirmPassword, setShowConfirmPassword] = useState(false);
   const [selectedRole, setSelectedRole] = useState('farmer');
   const [showVetFields, setShowVetFields] = useState(false);
+  const [selectedDistrict, setSelectedDistrict] = useState<number>(1);
 
   const {
     control,
     handleSubmit,
     watch,
     reset,
+    setValue,
     formState: { errors },
   } = useForm<RegisterFormData>({
     defaultValues: {
@@ -56,6 +71,7 @@ export default function RegisterScreen() {
       password: '',
       confirmPassword: '',
       role: 'farmer',
+      district_id: 1,
       license_number: '',
       specialization: '',
       years_experience: '',
@@ -65,12 +81,38 @@ export default function RegisterScreen() {
   });
 
   const password = watch('password');
-  const role = watch('role');
 
   const roles = [
     { id: 'farmer', label: 'Farmer', icon: '🌾', description: 'Manage your livestock' },
     { id: 'veterinarian', label: 'Veterinarian', icon: '🩺', description: 'Provide veterinary services' },
   ];
+
+  // Load districts
+  useEffect(() => {
+    const loadDistricts = async () => {
+      try {
+        setLoadingDistricts(true);
+        const response = await api.get('/districts');
+        const data = response.data.data || response.data;
+        setDistricts(Array.isArray(data) ? data : []);
+        if (data && data.length > 0) {
+          setSelectedDistrict(data[0].id);
+          setValue('district_id', data[0].id);
+        }
+      } catch (error) {
+        console.error('Load districts error:', error);
+        // Fallback districts
+        setDistricts([
+          { id: 1, name: 'Gasabo', province: 'Kigali' },
+          { id: 2, name: 'Kicukiro', province: 'Kigali' },
+          { id: 3, name: 'Nyarugenge', province: 'Kigali' },
+        ]);
+      } finally {
+        setLoadingDistricts(false);
+      }
+    };
+    loadDistricts();
+  }, []);
 
   const onSubmit = async (data: RegisterFormData) => {
     try {
@@ -82,7 +124,7 @@ export default function RegisterScreen() {
         phone: data.phone.trim(),
         email: data.email.trim().toLowerCase(),
         password: data.password,
-        district_id: 1,
+        district_id: data.district_id || 1,
         role: selectedRole || 'farmer',
       };
 
@@ -104,30 +146,50 @@ export default function RegisterScreen() {
 
       console.log('📥 RESPONSE:', response.data);
 
-      // ✅ Different messages based on role
-      let successMessage = '';
-      if (selectedRole === 'veterinarian') {
-        successMessage = 
-          'Veterinarian Account Created! 🩺\n\n' +
-          'Your account is pending admin approval.\n' +
-          'You will be notified once approved.\n\n' +
-          'You can login after approval.';
-      } else {
-        successMessage = 
-          'Account created successfully! 🎉\n\n' +
-          'You can now login with your email or phone number.';
-      }
-
-      Alert.alert('Success', successMessage);
-
-      reset();
-      setSelectedRole('farmer');
-      setShowVetFields(false);
+      // ✅ Check if response is successful
+      const responseData = response.data;
       
-      // Redirect to login after a short delay
-      setTimeout(() => {
-        router.replace('/(auth)/login');
-      }, 2000);
+      // ✅ Handle response - backend returns { success: true, message: "...", data: {...} }
+      if (responseData && responseData.success === true) {
+        // ✅ Different messages based on role
+        let successMessage = '';
+        if (selectedRole === 'veterinarian') {
+          successMessage = 
+            'Veterinarian Account Created! 🩺\n\n' +
+            'Your account is pending admin approval.\n' +
+            'You will be notified once approved.\n\n' +
+            'You can login after approval.';
+        } else {
+          successMessage = 
+            'Account created successfully! 🎉\n\n' +
+            'You can now login with your email or phone number.';
+        }
+
+        // ✅ Show success alert with OK button
+        Alert.alert(
+          'Success', 
+          successMessage,
+          [
+            {
+              text: 'OK',
+              onPress: () => {
+                // Reset form
+                reset();
+                setSelectedRole('farmer');
+                setShowVetFields(false);
+                setSelectedDistrict(districts[0]?.id || 1);
+                // Navigate to login
+                router.replace('/(auth)/login');
+              },
+            },
+          ],
+          { cancelable: false }
+        );
+      } else {
+        // ❌ Registration failed
+        const errorMsg = responseData?.message || 'Registration failed. Please try again.';
+        Alert.alert('Registration Failed', errorMsg);
+      }
 
     } catch (error: any) {
       console.log('❌ REGISTER ERROR DETAILS:', {
@@ -331,6 +393,36 @@ export default function RegisterScreen() {
           <Text style={styles.errorText}>{errors.confirmPassword.message}</Text>
         )}
 
+        {/* ✅ DISTRICT SELECTION */}
+        <Text style={[styles.label, { marginTop: 15 }]}>District *</Text>
+        {loadingDistricts ? (
+          <ActivityIndicator size="small" color="#2E7D32" />
+        ) : (
+          <View style={styles.districtContainer}>
+            {districts.map((district) => (
+              <TouchableOpacity
+                key={district.id}
+                style={[
+                  styles.districtCard,
+                  selectedDistrict === district.id && styles.districtCardSelected,
+                ]}
+                onPress={() => {
+                  setSelectedDistrict(district.id);
+                  setValue('district_id', district.id);
+                }}
+              >
+                <Text style={[
+                  styles.districtName,
+                  selectedDistrict === district.id && styles.districtNameSelected,
+                ]}>
+                  {district.name}
+                </Text>
+                <Text style={styles.districtProvince}>{district.province}</Text>
+              </TouchableOpacity>
+            ))}
+          </View>
+        )}
+
         {/* ✅ ROLE SELECTION */}
         <Text style={[styles.label, { marginTop: 15 }]}>Select Role *</Text>
         <View style={styles.roleContainer}>
@@ -344,6 +436,7 @@ export default function RegisterScreen() {
               onPress={() => {
                 setSelectedRole(role.id);
                 setShowVetFields(role.id === 'veterinarian');
+                setValue('role', role.id);
               }}
             >
               <Text style={styles.roleIcon}>{role.icon}</Text>
@@ -570,6 +663,39 @@ const styles = StyleSheet.create({
   },
   eyeIcon: {
     padding: 8,
+  },
+  districtContainer: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 8,
+    marginTop: 4,
+  },
+  districtCard: {
+    flex: 1,
+    minWidth: '30%',
+    padding: 10,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: '#ddd',
+    alignItems: 'center',
+    backgroundColor: '#fff',
+  },
+  districtCardSelected: {
+    borderColor: '#2E7D32',
+    backgroundColor: '#E8F5E9',
+  },
+  districtName: {
+    fontSize: 14,
+    fontWeight: '500',
+    color: '#333',
+  },
+  districtNameSelected: {
+    color: '#2E7D32',
+  },
+  districtProvince: {
+    fontSize: 10,
+    color: '#999',
+    marginTop: 2,
   },
   roleContainer: {
     flexDirection: 'row',
